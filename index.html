@@ -60,12 +60,13 @@ const FPS = 40, SPIN = 0.35;             // rad/s, clockwise seen from above
 const PITCH = 30 * Math.PI / 180, cp = Math.cos(PITCH), sp = Math.sin(PITCH);  // camera 30° up
 const GROW = 13, LIT = [13, 18], ORN_AT = 15, DOG_AT = 18;
 const STAR_AT = 19.5, GIFT_AT = 20, TEXT_AT = 23, BUILD = 25, LOOP = 35;
-const RAMP = ".:-=+*%#&@W", TAU = Math.PI * 2, STAR_Y = 1.04;
+const RAMP = ".,:;-=+*x%#&@W", RL = RAMP.length - 1, TAU = Math.PI * 2, STAR_Y = 1.04;
 const COLORS = ["#ff5a5f", "#ffd23f", "#4cc9f0", "#c77dff", "#ff9f1c", "#80ed99"];
-const PAL = [...RAMP].map((_, i) => `hsl(${108 + i * 3} 72% ${20 + i * 5.8}%)`);
+const PAL = [...RAMP].map((_, i) => `hsl(${108 + i * 2.3} 72% ${20 + i * 58 / RL}%)`);
+const PAL2 = [...RAMP].map((_, i) => `hsl(${140 + i * 1.5} 60% ${18 + i * 56 / RL}%)`);   // bluish needles
 const norm = v => { const l = Math.hypot(...v); return v.map(a => a / l); };
 const L = norm([-0.62, 0.42, 0.66]), HV = norm([-0.62, 0.42, 1.66]);  // light, half vector
-const NEEDLE = 0, GARLAND = 1, TRUNK = 2, BOX = 3, RIBBON = 4;
+const NEEDLE = 0, GARLAND = 1, TRUNK = 2, BOX = 3, RIBBON = 4, SNOW = 5;
 const rnd = Math.random;
 const hash = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5; return s - Math.floor(s); };
 let mode = "ascii", paused = false;
@@ -106,7 +107,7 @@ function build(step) {
       for (let j = 0; j < n; j++) {
         const th = (j + hash(j, u * 977)) / n * TAU, r = R * u * wobble(th, k);
         const tn = th / TAU, garland = (((tn + y * 1.3) % 1) + 1) % 1 < 0.05;
-        add(0, garland ? GARLAND : NEEDLE, r * Math.sin(th), y, r * Math.cos(th),
+        add(0, garland ? GARLAND : u > 0.93 && hash(j, k + u * 31) > 0.45 ? SNOW : NEEDLE, r * Math.sin(th), y, r * Math.cos(th),
           nh * Math.sin(th), ny, nh * Math.cos(th),
           GROW * (0.86 - y) / 1.86 * 0.92 + hash(Math.floor(tn * 37), Math.floor(y * 30)) * 1.1,
           0.8 + 0.4 * hash(Math.floor(tn * 188), Math.floor(y * 45)), u,
@@ -231,12 +232,13 @@ const bg = Array.from({ length: 70 }, () => ({ x: rnd(), y: rnd(), p: rnd() * 6,
 
 // 5) canvas grid + orthographic camera
 const cv = $("cv"), ctx = cv.getContext("2d");
-let COLS, ROWS, cs, ch, fs, dpr, SX, SY, cx, cy, G, C, GL, Z, W;
+let COLS, ROWS, cs, ch, fs, dpr, SX, SY, cx, cy, G, C, GL, Z, W, BASE, K;
 function resize() {
   const r = cv.getBoundingClientRect();
-  dpr = Math.min(devicePixelRatio || 1, 2);
+  dpr = Math.min(devicePixelRatio || 1, 3);
   cv.width = r.width * dpr; cv.height = r.height * dpr;
-  COLS = Math.min(130, Math.max(72, Math.round(r.width / 4.2)));
+  BASE = Math.min(130, Math.max(72, Math.round(r.width / 4.2)));
+  K = 1.45; COLS = Math.round(BASE * K);   // tree grid is K times finer than the sprites
   cs = cv.width / COLS; fs = cs / 0.6; ch = fs * 1.05;
   ROWS = Math.floor(cv.height / ch);
   const S = Math.min(cv.height * 0.7 / 2.45, cv.width * 0.46);  // px per world unit
@@ -248,7 +250,7 @@ function resize() {
 let CAP = [], CAP_Y = 0, BC = 0, bcs = 0, bch = 0;
 function banner() {                       // greeting rasterised on a finer ASCII grid
   CAP_Y = Math.round(ROWS * 0.82) * ch;
-  BC = Math.round(COLS / 0.45); bcs = cv.width / BC; bch = bcs * ch / cs;
+  BC = Math.round(BASE / 0.45); bcs = cv.width / BC; bch = bcs * ch / cs;
   const rows = Math.floor((cv.height - CAP_Y) / bch), k = 6, w = BC * k, bh = k * ch / cs, h = Math.round(rows * bh);
   const oc = document.createElement("canvas"); oc.width = w; oc.height = h;
   const g = oc.getContext("2d");
@@ -318,15 +320,17 @@ function draw() {
     let b = lam, g, col, glow = false;
     if (kind === NEEDLE) {
       b = Math.min(1, (0.1 + 0.9 * lam) * (0.5 + 0.5 * PU[i]) * NOISE[i]);
-      g = mode === "ascii" ? RAMP[Math.floor(b * 10)] : msg[LET[i] % msg.length];
-      col = PAL[Math.floor(b * 10)];
+      g = mode === "ascii" ? RAMP[Math.floor(b * RL)] : msg[LET[i] % msg.length];
+      col = (LET[i] % 5 ? PAL : PAL2)[Math.floor(b * RL)];
     } else if (kind === GARLAND) {        // string lights: a glow chasing along the spiral
       const p = 0.5 + 0.5 * Math.sin(PY[i] * 40 - t * 6);
       g = p > 0.7 ? "*" : "~"; col = `hsl(46 100% ${52 + 40 * p}%)`; glow = p > 0.5;
+    } else if (kind === SNOW) {           // snow dusting on the branch tips
+      b = Math.min(1, 0.45 + 0.6 * lam); g = RAMP[Math.floor(b * RL)]; col = `hsl(205 45% ${55 + 43 * b}%)`;
     } else if (kind === TRUNK) { g = "#"; col = "#8a5a2b"; }
     else {                                // gift box / ribbon
       b = 0.2 + 0.8 * lam;
-      if (kind === RIBBON) { g = RAMP[Math.floor(b * 10)]; col = `hsl(45 95% ${35 + 50 * b}%)`; }
+      if (kind === RIBBON) { g = RAMP[Math.floor(b * RL)]; col = `hsl(45 95% ${35 + 50 * b}%)`; }
       else { g = (k + Math.floor(k / COLS)) % 2 ? "X" : "#"; col = `hsl(${GIFTS[OBJ[i] - 1].hue} 75% ${22 + 45 * b}%)`; }
     }
     G[k] = g; C[k] = col; GL[k] = glow;
@@ -348,6 +352,10 @@ function draw() {
     }
     ctx.restore();
   }
+  const [gx, gy] = proj(0, -1, 0, 1, 0), gs = ctx.createRadialGradient(0, 0, 0, 0, 0, 1.25 * SX * cs);
+  gs.addColorStop(0, "rgba(0,0,12,0.6)"); gs.addColorStop(1, "rgba(0,0,12,0)");   // soft floor shadow
+  ctx.save(); ctx.translate(gx * cs, gy * ch); ctx.scale(1, sp); ctx.fillStyle = gs;
+  ctx.fillRect(-2 * SX * cs, -2 * SX * cs, 4 * SX * cs, 4 * SX * cs); ctx.restore();
   ctx.font = `bold ${fs}px ui-monospace, Menlo, Consolas, monospace`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   for (let i = 0; i < G.length; i++) {
@@ -368,7 +376,7 @@ function draw() {
     });
   }
   const anchor = (th, y) => { const r = radius(y, th) * 1.02; return proj(r * Math.sin(th), y, r * Math.cos(th), ca, sa); };
-  ctx.font = `bold ${fs * 1.45}px ui-monospace, Menlo, Consolas, monospace`;
+  ctx.font = `bold ${fs * 1.45 * K}px ui-monospace, Menlo, Consolas, monospace`;
   LIGHTS.forEach((l, i) => {              // big glowing bulbs
     if (t < l.at) return;
     lights++;
@@ -384,16 +392,16 @@ function draw() {
       const face = Math.cos(o.th - ang);
       if (t < o.at || face < 0.35 || !onTop(c, r, d)) return;
       ctx.globalAlpha = 0.5 + 0.5 * face;
-      drawSprite(o.s, (c + 0.5) * cs, (r + 0.5) * ch, 1.25 * Math.min(1, ease(Math.min(1, (t - o.at) / 0.4))));
+      drawSprite(o.s, (c + 0.5) * cs, (r + 0.5) * ch, 1.25 * K * Math.min(1, ease(Math.min(1, (t - o.at) / 0.4))));
     });
   ctx.shadowBlur = 0; ctx.globalAlpha = 1;
   if (t > DOG_AT) {                       // poodle on the floor, front-left, with a soft shadow
     const [fc, fr] = proj(-0.62, -1, 0.95, 1, 0), rows = Math.min(DOG.length, Math.floor((t - DOG_AT) * 8) + 1);
-    const dw = cs * 1.55, dh = ch * 1.55;   // dog uses a bigger cell than the tree
+    const dw = cs * 1.55 * K, dh = ch * 1.55 * K;   // dog uses a bigger cell than the tree
     const x0 = fc * cs - 10 * dw, y0 = (fr + 1) * ch - DOG.length * dh;
     ctx.fillStyle = "rgba(0,0,10,0.45)";
     ctx.beginPath(); ctx.ellipse(x0 + 9 * dw, y0 + DOG.length * dh, 10 * dw, 1.1 * dh, 0, 0, TAU); ctx.fill();
-    ctx.font = `bold ${fs * 1.55}px ui-monospace, Menlo, Consolas, monospace`;
+    ctx.font = `bold ${fs * 1.55 * K}px ui-monospace, Menlo, Consolas, monospace`;
     for (let r = 0; r < rows; r++) {
       const a = DOG[r].findIndex(Boolean), b = DOG[r].findLastIndex(Boolean) + 1;
       ctx.fillStyle = "#0e1433";            // hide the tree behind the dog
@@ -405,8 +413,8 @@ function draw() {
   if (sk > 0) {                           // gold block star + orbiting sparkles
     const [sx, sy] = proj(0, STAR_Y, 0, 1, 0), px = (sx + 0.5) * cs, py = (sy + 0.5) * ch;
     starSide = Math.sign(Math.cos(t * 0.8)) || 1;
-    drawSprite(STAR, px, py, 1.4 * sk, 10 * dpr);
-    ctx.font = `bold ${fs * 1.2}px ui-monospace, Menlo, Consolas, monospace`;
+    drawSprite(STAR, px, py, 1.4 * K * sk, 10 * dpr);
+    ctx.font = `bold ${fs * 1.2 * K}px ui-monospace, Menlo, Consolas, monospace`;
     for (let j = 0; j < 6; j++) {
       const a = t * 0.7 + j * TAU / 6, R = 0.3 * SX * cs * (1 + 0.15 * Math.sin(t * 2 + j));
       ctx.globalAlpha = 0.5 + 0.5 * Math.sin(t * 4 + j * 2);
