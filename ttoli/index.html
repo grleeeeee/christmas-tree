@@ -36,31 +36,48 @@ const RAMP = ".,:;-=+*x%#&@W", RL = RAMP.length - 1, TAU = Math.PI * 2;
 const norm = v => { const l = Math.hypot(...v); return v.map(a => a / l); };
 const L = norm([-0.55, 0.5, 0.67]);
 const hash = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5; return s - Math.floor(s); };
-const FUR = 0, DARK = 1, SHINE = 2;
-const PAL = [...RAMP].map((_, i) => `hsl(${28 + 14 * i / RL} ${24 - 14 * i / RL}% ${46 + 54 * i / RL}%)`);  // warm white fur
+const FUR = 0, DARK = 1, SHINE = 2, STAIN = 3, EYE = 4, RIM = 5;
+const PAL = [...RAMP].map((_, i) => `hsl(${30 + 12 * i / RL} ${22 - 14 * i / RL}% ${46 + 54 * i / RL}%)`);   // warm white curls
+const PAL_STAIN = [...RAMP].map((_, i) => `hsl(22 ${48 - 12 * i / RL}% ${38 + 40 * i / RL}%)`);              // tear-stained fur
+const PAL_EYE = [...RAMP].map((_, i) => `hsl(204 55% ${55 + 35 * i / RL}%)`);                                // cloudy blue-grey eyes
+const START = -0.62;                       // drawn at a diagonal, then spins
 let paused = false, t = +new URLSearchParams(location.search).get("t") || 0;
 
-// 1) 똘이: a fluffy white poodle standing up, made of ellipsoids
+// 1) 똘이: a slim white toy poodle standing up to punch, made of ellipsoids
 //    [group, kind, x, y, z, rx, ry, rz] — group 0 body, 1 left arm, 2 right arm (arms punch)
-const side = f => [-1, 1].flatMap(s => f(s));
+const side = f => [-1, 1].flatMap(s => f(s, s < 0 ? 1 : 2));
 const PARTS = [
-  [0, FUR, 0, -0.27, 0, 0.26, 0.42, 0.24],                    // torso
-  [0, FUR, 0, 0.0, 0.05, 0.28, 0.25, 0.26],                   // chest fluff
-  [0, FUR, 0, 0.5, 0.05, 0.34, 0.31, 0.31],                   // big round head
-  [0, FUR, 0, 0.42, 0.3, 0.14, 0.11, 0.12],                   // muzzle
-  [0, DARK, 0, 0.45, 0.415, 0.05, 0.04, 0.035],               // nose
-  [0, DARK, 0, 0.365, 0.385, 0.04, 0.014, 0.02],              // mouth
-  [0, FUR, 0, -0.5, -0.27, 0.09, 0.09, 0.09],                 // tail pom
-  ...side(s => [
-    [0, FUR, s * 0.37, 0.43, 0, 0.13, 0.22, 0.13],            // floppy ear
-    [0, DARK, s * 0.13, 0.565, 0.3, 0.042, 0.042, 0.03],      // eye
-    [0, SHINE, s * 0.118, 0.58, 0.328, 0.013, 0.013, 0.01],   // eye highlight
-    [0, FUR, s * 0.16, -0.62, 0.02, 0.15, 0.2, 0.17],         // haunch
-    [0, FUR, s * 0.17, -0.8, 0.1, 0.12, 0.07, 0.15],          // hind foot
-    [s < 0 ? 1 : 2, FUR, s * 0.22, -0.05, 0.22, 0.1, 0.1, 0.2],     // forearm
-    [s < 0 ? 1 : 2, FUR, s * 0.23, -0.03, 0.42, 0.125, 0.12, 0.12], // paw
-    [s < 0 ? 1 : 2, DARK, s * 0.23, -0.065, 0.533, 0.045, 0.035, 0.02],  // paw pad
-    ...[-0.05, 0, 0.05].map(d => [s < 0 ? 1 : 2, DARK, s * 0.23 + d, 0.005, 0.53, 0.02, 0.02, 0.015]),  // toes
+  [0, FUR, 0, -0.27, 0, 0.185, 0.38, 0.175],                  // slim torso
+  [0, FUR, 0, -0.5, -0.02, 0.2, 0.17, 0.19],                  // hips
+  [0, FUR, 0, 0.02, 0.05, 0.205, 0.2, 0.19],                  // chest fluff
+  [0, FUR, 0, 0.23, 0.04, 0.14, 0.14, 0.14],                  // neck
+  [0, FUR, 0, 0.47, 0.03, 0.235, 0.22, 0.235],                // head
+  [0, FUR, 0, 0.63, 0.0, 0.2, 0.13, 0.2],                     // curly topknot
+  [0, FUR, 0, 0.4, 0.27, 0.105, 0.09, 0.13],                  // muzzle base
+  [0, STAIN, 0, 0.385, 0.385, 0.075, 0.068, 0.085],           // muzzle tip
+  [0, STAIN, 0, 0.33, 0.33, 0.07, 0.05, 0.09],                // chin beard
+  [0, DARK, 0, 0.415, 0.462, 0.06, 0.048, 0.042],              // big nose
+  [0, DARK, 0, 0.345, 0.43, 0.035, 0.012, 0.03],              // mouth
+  [0, FUR, 0, -0.5, -0.2, 0.035, 0.11, 0.035],                // tail
+  [0, FUR, 0, -0.37, -0.24, 0.075, 0.085, 0.075],             // tail pom
+  ...side((s, g) => [
+    [0, FUR, s * 0.14, 0.4, 0.16, 0.1, 0.1, 0.1],             // cheek fluff
+    [0, FUR, s * 0.25, 0.57, 0.0, 0.11, 0.1, 0.12],           // ear root
+    [0, FUR, s * 0.31, 0.43, 0.0, 0.115, 0.19, 0.125],        // fluffy ear
+    [0, FUR, s * 0.33, 0.3, 0.02, 0.09, 0.1, 0.1],            // ear tip curls
+    [0, STAIN, s * 0.09, 0.455, 0.235, 0.05, 0.05, 0.035],    // tear stain
+    [0, RIM, s * 0.108, 0.5, 0.225, 0.062, 0.058, 0.035],       // dark eye rim
+    [0, EYE, s * 0.108, 0.5, 0.243, 0.046, 0.044, 0.032],      // cloudy eye
+    [0, SHINE, s * 0.098, 0.514, 0.274, 0.013, 0.013, 0.008], // glint
+    [0, FUR, s * 0.13, -0.58, 0.02, 0.095, 0.17, 0.115],      // thigh
+    [0, FUR, s * 0.15, -0.76, 0.03, 0.05, 0.11, 0.055],       // thin lower leg
+    [0, FUR, s * 0.15, -0.86, 0.09, 0.06, 0.04, 0.1],         // hind foot
+    ...[-0.03, 0, 0.03].map(d => [0, DARK, s * 0.15 + d, -0.875, 0.185, 0.012, 0.012, 0.016]),   // nails
+    [g, FUR, s * 0.17, 0.06, 0.12, 0.075, 0.09, 0.1],         // shoulder
+    [g, FUR, s * 0.19, 0.0, 0.25, 0.05, 0.052, 0.14],         // thin forearm
+    [g, FUR, s * 0.2, 0.01, 0.4, 0.07, 0.066, 0.075],         // paw
+    [g, DARK, s * 0.2, -0.012, 0.468, 0.03, 0.024, 0.015],    // paw pad
+    ...[-0.035, 0, 0.035].map(d => [g, DARK, s * 0.2 + d, 0.035, 0.466, 0.013, 0.013, 0.012]),   // toe beans
   ])];
 
 // 2) sample every part into a dense point cloud (finer than one cell)
@@ -68,15 +85,20 @@ let N = 0, GRP, KIND, PX, PY, PZ, NX, NY, NZ, BORN, NOISE;
 function build(step) {
   const a = [];
   PARTS.forEach(([grp, kind, cx, cy, cz, rx, ry, rz], pi) => {
-    const n = Math.ceil(4 * Math.PI * ((rx + ry + rz) / 3) ** 2 / step ** 2 * 1.4);
-    for (let i = 0; i < n; i++) {         // fibonacci sphere, with curly bumps on the fur
+    const furry = kind === FUR || kind === STAIN;
+    const n = Math.ceil(4 * Math.PI * ((rx + ry + rz) / 3) ** 2 / step ** 2 * 1.5);
+    for (let i = 0; i < n; i++) {         // fibonacci sphere
       const y = 1 - 2 * (i + 0.5) / n, r = Math.sqrt(1 - y * y), th = i * 2.39996;
       const d = [r * Math.cos(th), y, r * Math.sin(th)];
-      const curl = kind === FUR ? 1 + 0.05 * Math.sin(th * 9 + pi) * Math.sin(y * 14 + pi * 2) : 1;
-      const p = [cx + d[0] * rx * curl, cy + d[1] * ry * curl, cz + d[2] * rz * curl];
-      a.push([grp, kind, ...p, ...norm([d[0] / rx, d[1] / ry, d[2] / rz]),
-        (0.83 - p[1]) / 1.75 * 8.4 + hash(Math.floor(th * 3), Math.floor(y * 9) + pi) * 1.1,
-        0.72 + 0.56 * hash(Math.floor(th * 40) + pi, Math.floor(y * 60))]);
+      let p = [cx + d[0] * rx, cy + d[1] * ry, cz + d[2] * rz], nn = norm([d[0] / rx, d[1] / ry, d[2] / rz]);
+      if (furry) {                        // tight curls: bumpy surface + normals tilted per curl
+        const q = p.map(v => Math.floor(v * 38)), bump = 0.014 * Math.sin(p[0] * 95) * Math.sin(p[1] * 95 + pi) * Math.sin(p[2] * 95);
+        p = p.map((v, k) => v + nn[k] * bump);
+        nn = norm(nn.map((v, k) => v + 0.7 * (hash(q[0] + k * 17, q[1] * 3 + q[2] * 7) - 0.5)));
+      }
+      a.push([grp, kind, ...p, ...nn,
+        (0.78 - p[1]) / 1.68 * 8.4 + hash(Math.floor(th * 3), Math.floor(y * 9) + pi) * 1.1,
+        0.8 + 0.4 * hash(i, pi)]);
     }
   });
   N = a.length;
@@ -93,7 +115,7 @@ function resize() {
   const r = cv.getBoundingClientRect();
   dpr = Math.min(devicePixelRatio || 1, 3);
   cv.width = r.width * dpr; cv.height = r.height * dpr;
-  COLS = Math.min(200, Math.max(90, Math.round(r.width / 2.9)));
+  COLS = Math.min(280, Math.max(130, Math.round(r.width / 2.1)));
   cs = cv.width / COLS; fs = cs / 0.6; ch = fs * 1.05;
   ROWS = Math.floor(cv.height / ch);
   const S = Math.min(cv.height * 0.8 / 1.8, cv.width * 0.84 / 1.1);   // px per world unit
@@ -115,14 +137,14 @@ function draw() {
   ctx.beginPath(); ctx.ellipse(cx * cs, (cy + 0.86 * cp * SY) * ch, 0.5 * SX * cs, 0.09 * SX * cs, 0, 0, TAU); ctx.fill();
 
   G.fill(undefined); Z.fill(-1e9); W.fill(-1);
-  const ang = t < DRAW ? 0 : (t - DRAW) / (LOOP - DRAW) * TAU * TURNS, ca = Math.cos(ang), sa = Math.sin(ang);
+  const ang = START + (t < DRAW ? 0 : (t - DRAW) / (LOOP - DRAW) * TAU * TURNS), ca = Math.cos(ang), sa = Math.sin(ang);
   const jab = [0, Math.max(0, Math.sin(t * 7)) ** 0.7, Math.max(0, -Math.sin(t * 7)) ** 0.7];  // alternate paws
   const bob = 0.012 * Math.abs(Math.sin(t * 7));
   let shown = 0;
   for (let i = 0; i < N; i++) {           // z-buffer: keep the nearest point per cell
     if (t < BORN[i]) continue;
     const g = GRP[i], p = jab[g];
-    const lx = PX[i] - (g ? Math.sign(PX[i]) * p * 0.06 : 0), ly = PY[i] + bob + p * 0.07, lz = PZ[i] + p * 0.26;
+    const lx = PX[i] - (g ? Math.sign(PX[i]) * p * 0.06 : 0), ly = PY[i] + bob + p * 0.07, lz = PZ[i] + p * 0.2;
     const x = lx * ca - lz * sa, z = lz * ca + lx * sa;
     const c = Math.round(cx + x * SX), r = Math.round(cy - (ly * cp - z * sp) * SY);
     if (c < 0 || r < 0 || c >= COLS || r >= ROWS) continue;
@@ -134,13 +156,15 @@ function draw() {
     if (i < 0) continue;
     shown++;
     if (t - BORN[i] < 0.3) { G[k] = "*"; C[k] = "#fff"; GL[k] = true; continue; }   // fresh ink
-    if (KIND[i] === DARK) { G[k] = "@"; C[k] = "#1c1b22"; GL[k] = false; continue; }
-    if (KIND[i] === SHINE) { G[k] = "*"; C[k] = "#fff"; GL[k] = false; continue; }
+    const kind = KIND[i]; GL[k] = false;
+    if (kind === DARK) { G[k] = "@"; C[k] = "#5a4d55"; continue; }
+    if (kind === RIM) { G[k] = "#"; C[k] = "#7a5546"; continue; }
+    if (kind === SHINE) { G[k] = "*"; C[k] = "#fff"; continue; }
     const nx = NX[i] * ca - NZ[i] * sa, nz1 = NZ[i] * ca + NX[i] * sa;
     const ny = NY[i] * cp - nz1 * sp, nz = nz1 * cp + NY[i] * sp;
-    const b = Math.min(1, (0.5 + 0.6 * Math.max(0, L[0] * nx + L[1] * ny + L[2] * nz)) * NOISE[i]);
+    const b = Math.min(1, (0.42 + 0.66 * Math.max(0, L[0] * nx + L[1] * ny + L[2] * nz)) * NOISE[i]);
     const q = Math.floor(b * RL);
-    G[k] = RAMP[q]; C[k] = PAL[q]; GL[k] = false;
+    G[k] = RAMP[q]; C[k] = (kind === STAIN ? PAL_STAIN : kind === EYE ? PAL_EYE : PAL)[q];
   }
   ctx.font = `bold ${fs}px ui-monospace, Menlo, Consolas, monospace`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -151,7 +175,7 @@ function draw() {
     ctx.fillText(G[i], ((i % COLS) + 0.5) * cs, (Math.floor(i / COLS) + 0.5) * ch);
   }
   ctx.shadowBlur = 0;
-  $("hr").textContent = ((ang * 180 / Math.PI) % 360).toFixed(1) + "°";
+  $("hr").textContent = ((((ang - START) * 180 / Math.PI) % 360 + 360) % 360).toFixed(1) + "°";
   $("hp").textContent = Math.floor(t * 7 / Math.PI);
   $("hn").textContent = shown.toLocaleString();
   $("clock").innerHTML = `<i class=dot></i>${t < DRAW ? "drawing" : "spinning"} ${t.toFixed(1)}s`;
