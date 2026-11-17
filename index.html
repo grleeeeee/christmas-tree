@@ -65,19 +65,21 @@ const FPS = 40, SPIN = 0.35;             // rad/s, clockwise seen from above
 const PITCH = 30 * Math.PI / 180, cp = Math.cos(PITCH), sp = Math.sin(PITCH);  // camera 30° up
 const GROW = 13, LIT = [13, 18], ORN_AT = 15, DOG_AT = 18;
 const STAR_AT = 19.5, GIFT_AT = 20, TEXT_AT = 23, BUILD = 25, LOOP = 35;
-const RAMP = ".:-=+*%#&@W", TAU = Math.PI * 2;
+const RAMP = ".:-=+*%#&@W", TAU = Math.PI * 2, STAR_Y = 1.04;
 const COLORS = ["#ff5a5f", "#ffd23f", "#4cc9f0", "#c77dff", "#ff9f1c", "#80ed99"];
 const PAL = [...RAMP].map((_, i) => `hsl(${108 + i * 3} 72% ${20 + i * 5.8}%)`);
-const L = [-0.62, 0.42, 0.66];           // light direction in view space
+const norm = v => { const l = Math.hypot(...v); return v.map(a => a / l); };
+const L = norm([-0.62, 0.42, 0.66]), HV = norm([-0.62, 0.42, 1.66]);  // light, half vector
+const NEEDLE = 0, GARLAND = 1, TRUNK = 2, BOX = 3, RIBBON = 4;
 const rnd = Math.random;
 const hash = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5; return s - Math.floor(s); };
 let mode = "ascii", paused = false;
 let t = +new URLSearchParams(location.search).get("t") || 0;
 
-// 1) tree = 4 stacked cones [top y, height, base radius]
+// 1) scene: tree (4 stacked cones) + gift boxes, all 3D
 const TIERS = [[0.86, 0.46, 0.42], [0.6, 0.55, 0.6], [0.26, 0.6, 0.77], [-0.12, 0.7, 0.92]];
 const wobble = (th, k) => 1 + 0.07 * Math.sin(th * 7 + k * 2) + 0.04 * Math.sin(th * 19 + k);
-function radius(y, th) {                  // widest tier at height y
+function radius(y, th) {
   let best = 0;
   TIERS.forEach(([top, h, R], k) => {
     const u = (top - y) / h;
@@ -85,74 +87,156 @@ function radius(y, th) {                  // widest tier at height y
   });
   return best;
 }
+const GIFTS = [                           // [x, z, w, h, d, yaw, hue, stacked on]
+  [-1.0, -0.15, 0.28, 0.22, 0.26, 0.3, 355], [1.0, -0.2, 0.26, 0.26, 0.26, -0.4, 205],
+  [-1.0, -0.15, 0.17, 0.14, 0.16, -0.5, 320, 0], [1.0, -0.2, 0.16, 0.13, 0.16, 0.6, 140, 1],
+  [-0.8, -0.5, 0.24, 0.2, 0.22, -0.2, 175], [0.8, -0.5, 0.22, 0.2, 0.22, 0.7, 30],
+  [0.72, 0.74, 0.22, 0.18, 0.22, 0.25, 270]]
+  .map(([x, z, w, h, d, yaw, hue, on], i) => ({ x, z, w, h, d, yaw, hue, on, at: GIFT_AT + i * 0.45 }));
+GIFTS.forEach(g => g.rest = g.on == null ? -1 : -1 + GIFTS[g.on].h);
 
-// 2) sprites: climbing shoe, ballet shoe, white poodle, gift, star
-const sprite = (art, pal, def) => ({ art, pal, def });
-const CLIMB = sprite([
-  "   ,---. ",
-  " _/xxxx| ",
-  "(######\\_",
-  " ========"], { x: "#2ec4b6", "=": "#9aa3b5" }, "#ff7a29");
-const BALLET = sprite([
-  "  \\  /  ",
-  "   \\/   ",
-  " .-##-. ",
-  "(######)",
-  " `----' "], { "\\": "#ffd6e8", "/": "#ffd6e8" }, "#ff8fc0");
-const DOG = sprite([
-  "           @@@@    ",
-  "          @@@@@@   ",
-  "  @@     @@@@@o@@  ",
-  " @@@@    @@@@@@@@@*",
-  "  @@     @@@@@@    ",
-  "   @@@@@@vvv@@     ",
-  "   @@@@@@@@@@@     ",
-  "    @@@@@@@@@      ",
-  "    ||     ||      ",
-  "   @@@    @@@      "], { o: "#20243a", "*": "#20243a", v: "#ff4d6d", "|": "#e8e8f0" }, "#ffffff");
-const GIFT = sprite([" \\v/ ", "[#|#]", "[#|#]"], { "\\": "#ffd23f", v: "#ffd23f", "/": "#ffd23f", "|": "#ffd23f" });
-const STAR = sprite(["    *    ", "   ***   ", "*********", " ******* ",
-  "  *****  ", " ***.*** ", "**     **"], {}, "#ffe14d");
-const ORN = [[CLIMB, 0.3, 0.38], [BALLET, 1.4, 0.1], [CLIMB, 2.5, -0.2],
-  [BALLET, 3.6, 0.5], [CLIMB, 4.7, -0.52], [BALLET, 5.6, -0.3]]
-  .map(([s, th, y], i) => ({ s, th, y, at: ORN_AT + i * 0.5 }));
-const LIGHTS = Array.from({ length: 150 }, (_, i) => ({ th: rnd() * TAU,
-  y: -0.78 + rnd() * 1.55, c: COLORS[i % 6], at: LIT[0] + i * (LIT[1] - LIT[0]) / 150 }));
-const GIFTS = [[0.1, "#ff5a5f"], [0.38, "#4cc9f0"], [-0.18, "#c77dff"],
-  [0.66, "#80ed99"], [0.24, "#ff9f1c"]].map(([x, c], i) => ({ x, c, at: GIFT_AT + i * 0.6 }));
-const bg = Array.from({ length: 70 }, () => ({ x: rnd(), y: rnd(), p: rnd() * 6, v: 0.01 + rnd() * 0.02 }));
-
-// 3) tree surface as a dense point cloud, sampled finer than one cell
-let N = 0, PX, PY, PZ, NX, NY, NZ, BORN, NOISE, PU, KIND, LET;
+// 2) everything becomes a dense point cloud, sampled finer than one cell
+let N = 0, OBJ, KIND, PX, PY, PZ, NX, NY, NZ, BORN, NOISE, PU, LET;
 function build(step) {
   const a = [];
-  const add = (x, y, z, nx, ny, nz, u, kind, th) => {
-    const tn = ((th % TAU) + TAU) % TAU;
-    a.push([x, y, z, nx, ny, nz, u, kind,
-      GROW * (0.86 - y) / 1.86 * 0.92 + hash(Math.floor(tn * 6), Math.floor(y * 30)) * 1.1,
-      0.8 + 0.4 * hash(Math.floor(tn * 30), Math.floor(y * 45)),
-      Math.floor(tn / TAU * 48) + Math.floor((y + 1) * 20) * 7]);
-  };
-  TIERS.forEach(([top, h, R], k) => {
-    const nh = 1 / Math.hypot(1, R / h), ny = (R / h) * nh;   // cone normal
+  const add = (o, kind, x, y, z, nx, ny, nz, born, noise = 1, u = 1, l = 0) =>
+    a.push([o, kind, x, y, z, nx, ny, nz, born, noise, u, l]);
+  TIERS.forEach(([top, h, R], k) => {     // tree: object 0
+    const nh = 1 / Math.hypot(1, R / h), ny = (R / h) * nh;
     for (let u = 0.01; u <= 1; u += step / Math.hypot(h, R)) {
       const n = Math.max(8, Math.ceil(TAU * R * u / step)), y = top - h * u;
       for (let j = 0; j < n; j++) {
         const th = (j + hash(j, u * 977)) / n * TAU, r = R * u * wobble(th, k);
-        const garland = (((th / TAU + y * 1.3) % 1) + 1) % 1 < 0.035;
-        add(r * Math.sin(th), y, r * Math.cos(th), nh * Math.sin(th), ny, nh * Math.cos(th), u, garland ? 1 : 0, th);
+        const tn = th / TAU, garland = (((tn + y * 1.3) % 1) + 1) % 1 < 0.05;
+        add(0, garland ? GARLAND : NEEDLE, r * Math.sin(th), y, r * Math.cos(th),
+          nh * Math.sin(th), ny, nh * Math.cos(th),
+          GROW * (0.86 - y) / 1.86 * 0.92 + hash(Math.floor(tn * 37), Math.floor(y * 30)) * 1.1,
+          0.8 + 0.4 * hash(Math.floor(tn * 188), Math.floor(y * 45)), u,
+          Math.floor(tn * 48) + Math.floor((y + 1) * 20) * 7);
       }
     }
   });
-  for (let y = -1; y < -0.8; y += step)   // trunk
+  for (let y = -1; y < -0.8; y += step)
     for (let th = 0; th < TAU; th += step / 0.08)
-      add(0.08 * Math.sin(th), y, 0.08 * Math.cos(th), Math.sin(th), 0, Math.cos(th), 1, 2, th);
+      add(0, TRUNK, 0.08 * Math.sin(th), y, 0.08 * Math.cos(th), Math.sin(th), 0, Math.cos(th), GROW);
+  const ellip = (o, kind, cx, cy, cz, rx, ry, rz, born) => {
+    const n = Math.ceil(4 * Math.PI * ((rx + ry + rz) / 3) ** 2 / step ** 2 * 1.5);
+    for (let i = 0; i < n; i++) {         // fibonacci sphere
+      const y = 1 - 2 * (i + 0.5) / n, r = Math.sqrt(1 - y * y), th = i * 2.39996;
+      const d = [r * Math.cos(th), y, r * Math.sin(th)];
+      add(o, kind, cx + d[0] * rx, cy + d[1] * ry, cz + d[2] * rz,
+        ...norm([d[0] / rx, d[1] / ry, d[2] / rz]), born);
+    }
+  };
+  GIFTS.forEach((g, gi) => {              // gifts: objects 1..
+    const o = 1 + gi, { w, h, d } = g, rw = 0.035;
+    const face = (n, f) => {
+      const [U, V] = n[1] ? [w, d] : n[0] ? [d, h] : [w, h];
+      for (let u = -U / 2; u <= U / 2; u += step) for (let v = -V / 2; v <= V / 2; v += step) {
+        const [x, y, z] = f(u, v);
+        const band = n[1] ? Math.abs(x) < rw || Math.abs(z) < rw : n[0] ? Math.abs(z) < rw : Math.abs(x) < rw;
+        add(o, band ? RIBBON : BOX, x, y, z, ...n, 0);
+      }
+    };
+    face([0, 1, 0], (u, v) => [u, h, v]);
+    face([0, 0, 1], (u, v) => [u, v + h / 2, d / 2]); face([0, 0, -1], (u, v) => [u, v + h / 2, -d / 2]);
+    face([1, 0, 0], (u, v) => [w / 2, v + h / 2, u]); face([-1, 0, 0], (u, v) => [-w / 2, v + h / 2, u]);
+    ellip(o, RIBBON, -0.04, h + 0.02, 0, 0.04, 0.025, 0.02, 0);   // bow
+    ellip(o, RIBBON, 0.04, h + 0.02, 0, 0.04, 0.025, 0.02, 0);
+  });
   N = a.length;
-  [PX, PY, PZ, NX, NY, NZ, PU, KIND, BORN, NOISE, LET] =
-    Array.from({ length: 11 }, (_, f) => Float32Array.from(a, p => p[f]));
+  [OBJ, KIND] = [0, 1].map(f => Uint8Array.from(a, p => p[f]));
+  [PX, PY, PZ, NX, NY, NZ, BORN, NOISE, PU, LET] =
+    Array.from({ length: 10 }, (_, f) => Float32Array.from(a, p => p[f + 2]));
 }
 
-// 4) canvas grid + camera (orthographic, 30° above, tree spins clockwise)
+// 3) poodle: ASCII art with fake-3D fur shading (height = distance to the edge)
+const DOG = [
+  "            @@@     ",
+  "           @@@@@    ",
+  "   @@     @@@@@@@   ",
+  "  @@@@    @@@o@@@@* ",
+  "   @@     @@@@@     ",
+  "    @@@@@@vv@@      ",
+  "   @@@@@@@@@@@      ",
+  "    @@@@@@@@@       ",
+  "     ||     ||      ",
+  "    @@@@   @@@@     "].map((row, r, art) => [...row].map((g, c) => {
+  const at = (rr, cc) => (art[rr] || "")[cc] > " ";
+  const dist = (rr, cc) => { let d = 0; while (d < 3 && [-1, 0, 1].every(a => [-1, 0, 1].every(b =>
+    at(rr + a * (d + 1), cc + b * (d + 1))))) d++; return at(rr, cc) ? Math.sqrt(d + 1) : 0; };
+  if (g === " ") return null;
+  if (g === "o" || g === "*") return ["@", "#11131f"];
+  if (g === "v") return ["#", "#ff4d6d"];
+  if (g === "|") return ["|", "#d9dbe6"];
+  const gx = dist(r, c + 1) - dist(r, c - 1), gy = dist(r - 1, c) - dist(r + 1, c);
+  const n = norm([-gx, -gy, 1.2]), b = Math.max(0, -0.55 * n[0] + 0.55 * n[1] + 0.63 * n[2]);
+  return ["@", `hsl(225 16% ${45 + 55 * b}%)`];   // same glyph, light does the 3D
+}));
+function drawStar(px, py, R, turn) {      // faceted gold star, spins by squashing x
+  const v = Array.from({ length: 10 }, (_, k) => {
+    const a = -Math.PI / 2 + k * Math.PI / 5, r = k % 2 ? R * 0.42 : R;
+    return [px + Math.cos(a) * r * turn, py + Math.sin(a) * r];
+  });
+  ctx.save(); ctx.shadowColor = "#ffcf4d"; ctx.shadowBlur = 18 * dpr;
+  v.forEach((p, k) => {                   // each arm = one lit + one shaded facet
+    const q = v[(k + 1) % 10], mid = -Math.PI / 2 + (k + 0.5) * Math.PI / 5;
+    const b = 0.5 + 0.3 * Math.cos(mid + 2.4) * Math.sign(turn) + (k % 2 ? -0.18 : 0.18);
+    ctx.fillStyle = `hsl(${42 + b * 8} 95% ${30 + 55 * b}%)`;
+    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(...p); ctx.lineTo(...q); ctx.fill();
+    ctx.shadowBlur = 0;
+  });
+  ctx.strokeStyle = "rgba(255,245,200,0.9)"; ctx.lineWidth = Math.max(1, R * 0.03);
+  ctx.beginPath(); v.forEach((p, k) => k ? ctx.lineTo(...p) : ctx.moveTo(...p)); ctx.closePath(); ctx.stroke();
+  const gl = ctx.createRadialGradient(px, py, 0, px, py, R * 0.35);
+  gl.addColorStop(0, "rgba(255,255,240,0.95)"); gl.addColorStop(1, "rgba(255,255,240,0)");
+  ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(px, py, R * 0.35, 0, TAU); ctx.fill();
+  ctx.restore();
+}
+
+// 4) ornaments drawn as little vector pictures: climbing shoe + pointe shoes
+
+function climbShoe(g) {                   // side view, downturned toe on the left
+  g.translate(-48, -28);
+  g.fillStyle = "#ff8a1f";
+  g.beginPath(); g.moveTo(80, 6); g.quadraticCurveTo(94, 24, 88, 44);
+  g.lineTo(60, 48); g.quadraticCurveTo(30, 50, 12, 44);
+  g.quadraticCurveTo(0, 38, 8, 30); g.quadraticCurveTo(30, 22, 52, 10); g.closePath(); g.fill();
+  g.lineCap = "round"; g.strokeStyle = "#17c3b2"; g.lineWidth = 7;     // velcro straps
+  [[30, 26, 37, 44], [44, 18, 51, 45], [58, 11, 65, 45]].forEach(([a, b, c, d]) => {
+    g.beginPath(); g.moveTo(a, b); g.lineTo(c, d); g.stroke(); });
+  g.strokeStyle = "#2b2d3a"; g.lineWidth = 8;                          // rubber sole + toe cap
+  g.beginPath(); g.moveTo(90, 42); g.lineTo(60, 50); g.quadraticCurveTo(30, 53, 11, 46);
+  g.quadraticCurveTo(1, 40, 7, 31); g.stroke();
+  g.lineWidth = 3; g.beginPath(); g.arc(82, 3, 5, 0, TAU); g.stroke();  // heel loop
+}
+function balletShoes(g) {                 // pair of pointe shoes hanging by ribbons
+  const shoe = (x, y, rot, c1, c2) => {
+    g.save(); g.translate(x, y); g.rotate(rot);
+    const gr = g.createLinearGradient(-12, 0, 10, 0);
+    gr.addColorStop(0, c1); gr.addColorStop(1, c2); g.fillStyle = gr;
+    g.beginPath(); g.moveTo(-9, -18); g.quadraticCurveTo(-14, -2, -8, 14);
+    g.quadraticCurveTo(-6, 22, 0, 22); g.quadraticCurveTo(7, 22, 8, 14);
+    g.quadraticCurveTo(11, 0, 6, -14); g.quadraticCurveTo(-1, -11, -9, -18); g.fill();
+    g.fillStyle = "#b8466f"; g.beginPath(); g.ellipse(-1.5, -15, 7, 2.5, 0.35, 0, TAU); g.fill();
+    g.restore();
+  };
+  g.strokeStyle = "#ffc9de"; g.lineWidth = 2.5;
+  [[-12, -6], [12, -4]].forEach(([x, y]) => {
+    g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x * 0.2, -22, 0, -34); g.stroke(); });
+  shoe(12, 12, 0.2, "#e88aae", "#ffb3cf");
+  shoe(-10, 10, -0.15, "#ffa6c9", "#ffe0ec");
+  g.fillStyle = "#ff6fa5";
+  [[-5, 0.4], [5, -0.4]].forEach(([x, r]) => { g.beginPath(); g.ellipse(x, -34, 5, 3, r, 0, TAU); g.fill(); });
+}
+const ORN = [[climbShoe, 0.3, 0.36, 1], [balletShoes, 1.4, 0.12, 1.3], [climbShoe, 2.5, -0.22, 1],
+  [balletShoes, 3.6, 0.5, 1.2], [climbShoe, 4.7, -0.5, 1.1], [balletShoes, 5.6, -0.3, 1.3]]
+  .map(([draw, th, y, size], i) => ({ draw, th, y, size, at: ORN_AT + i * 0.5 }));
+const LIGHTS = Array.from({ length: 150 }, (_, i) => ({ th: rnd() * TAU,
+  y: -0.78 + rnd() * 1.55, c: COLORS[i % 6], at: LIT[0] + i * (LIT[1] - LIT[0]) / 150 }));
+const bg = Array.from({ length: 70 }, () => ({ x: rnd(), y: rnd(), p: rnd() * 6, v: 0.01 + rnd() * 0.02 }));
+
+// 5) canvas grid + orthographic camera
 const cv = $("cv"), ctx = cv.getContext("2d");
 let COLS, ROWS, cs, ch, fs, dpr, SX, SY, cx, cy, G, C, GL, Z, W;
 function resize() {
@@ -162,39 +246,25 @@ function resize() {
   COLS = Math.min(130, Math.max(72, Math.round(r.width / 4.2)));
   cs = cv.width / COLS; fs = cs / 0.6; ch = fs * 1.05;
   ROWS = Math.floor(cv.height / ch);
-  const S = Math.min(cv.height * 0.8 / 2.35, cv.width * 0.49);   // px per world unit
-  SX = S / cs; SY = S / ch; cx = COLS / 2; cy = ROWS * 0.03 + 1.08 * SY;
+  const S = Math.min(cv.height * 0.8 / 2.45, cv.width * 0.46);   // px per world unit
+  SX = S / cs; SY = S / ch; cx = COLS / 2; cy = ROWS * 0.03 + 1.12 * SY;
   G = new Array(COLS * ROWS); C = []; GL = [];
   Z = new Float32Array(COLS * ROWS); W = new Int32Array(COLS * ROWS);
-  build(0.6 / SX);
+  build(0.65 / SX);
 }
 addEventListener("resize", resize); resize();
 
-let ca = 1, sa = 0;
-function view(x, y, z) {                  // world -> [col, row, depth]
-  const x1 = x * ca - z * sa, z1 = z * ca + x * sa;
-  return [Math.round(cx + x1 * SX), Math.round(cy - (y * cp - z1 * sp) * SY), z1 * cp + y * sp];
-}
-function onTop(c, r, d) {                 // is this point the visible surface?
+const proj = (x, y, z, c, s) => {         // world -> [col, row, depth] after yaw
+  const x1 = x * c - z * s, z1 = z * c + x * s;
+  return [cx + x1 * SX, cy - (y * cp - z1 * sp) * SY, z1 * cp + y * sp];
+};
+const onTop = (c, r, d) => {              // is this point on the visible surface?
+  c = Math.round(c); r = Math.round(r);
   if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return false;
   const i = r * COLS + c;
   return W[i] < 0 || d > Z[i] - 0.04;
-}
-function put(c, r, glyph, color, glow) {
-  if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return;
-  const i = r * COLS + c;
-  G[i] = glyph; C[i] = color; GL[i] = glow;
-}
-function stamp(s, c0, r0, tint, glow, rows = s.art.length) {
-  for (let r = 0; r < rows; r++) {        // opaque: hide the tree behind the sprite
-    const line = s.art[r], a = line.search(/\S/), b = line.trimEnd().length;
-    for (let c = a; c < b; c++) {
-      const g = line[c];
-      if (g === " ") put(c0 + c, r0 + r, undefined);
-      else put(c0 + c, r0 + r, g, s.pal[g] || tint || s.def, glow);
-    }
-  }
-}
+};
+const ease = x => 1 + 2.7 * (x - 1) ** 3 + 1.7 * (x - 1) ** 2;   // overshoot pop
 
 function draw() {
   ctx.clearRect(0, 0, cv.width, cv.height);
@@ -203,60 +273,66 @@ function draw() {
     ctx.fillRect(s.x * cv.width, ((s.y + t * s.v) % 1) * cv.height, 1.5 * dpr, 1.5 * dpr);
   }
   G.fill(undefined); Z.fill(-1e9); W.fill(-1);
-  const ang = t * SPIN; ca = Math.cos(ang); sa = Math.sin(ang);
+  const ang = t * SPIN, ca = Math.cos(ang), sa = Math.sin(ang);
+  const sk = t < STAR_AT ? 0 : ease(Math.min(1, (t - STAR_AT) / 0.8));
+  const TF = [{ on: 1, c: ca, s: sa, k: 1, x: 0, y: 0, z: 0 },
+    ...GIFTS.map(g => ({ on: t > g.at, c: Math.cos(g.yaw), s: Math.sin(g.yaw), k: 1, x: g.x, z: g.z,
+      y: g.rest + Math.max(0, 1.8 - 3 * (t - g.at) ** 2) }))];
   const msg = ($("msg").value || GREET).replace(/\s/g, "") || "*";
   let shown = 0, lights = 0;
 
   for (let i = 0; i < N; i++) {           // z-buffer: keep the nearest point per cell
-    if (t < BORN[i]) continue;
-    const [c, r, d] = view(PX[i], PY[i], PZ[i]);
+    const T = TF[OBJ[i]];
+    if (!T.on || t < BORN[i]) continue;
+    const lx = PX[i] * T.k, lz = PZ[i] * T.k;
+    const x = lx * T.c - lz * T.s + T.x, z = lz * T.c + lx * T.s + T.z, y = PY[i] * T.k + T.y;
+    const c = Math.round(cx + x * SX), r = Math.round(cy - (y * cp - z * sp) * SY);
     if (c < 0 || r < 0 || c >= COLS || r >= ROWS) continue;
-    const k = r * COLS + c;
+    const d = z * cp + y * sp, k = r * COLS + c;
     if (d > Z[k]) { Z[k] = d; W[k] = i; }
   }
   for (let k = 0; k < W.length; k++) {    // shade only the visible points
     const i = W[k];
     if (i < 0) continue;
     shown++;
-    if (t - BORN[i] < 0.35) { G[k] = "*"; C[k] = "#f4fff0"; GL[k] = true; continue; }
-    if (KIND[i] === 2) { G[k] = "#"; C[k] = "#8a5a2b"; continue; }
-    const nx = NX[i] * ca - NZ[i] * sa, nz1 = NZ[i] * ca + NX[i] * sa;
+    const T = TF[OBJ[i]], kind = KIND[i];
+    if (t - BORN[i] < 0.35 && kind <= GARLAND) { G[k] = "*"; C[k] = "#f4fff0"; GL[k] = true; continue; }
+    const nx = NX[i] * T.c - NZ[i] * T.s, nz1 = NZ[i] * T.c + NX[i] * T.s;
     const ny = NY[i] * cp - nz1 * sp, nz = nz1 * cp + NY[i] * sp;
-    let b = Math.max(0, L[0] * nx + L[1] * ny + L[2] * nz);  // light from upper-left
-    b = Math.min(1, (0.1 + 0.9 * b) * (0.5 + 0.5 * PU[i]) * NOISE[i]);
-    const g = Math.floor(b * (RAMP.length - 1));
-    if (KIND[i] === 1) { G[k] = "~"; C[k] = `hsl(45 95% ${30 + b * 50}%)`; continue; }
-    G[k] = mode === "ascii" ? RAMP[g] : msg[LET[i] % msg.length];
-    C[k] = PAL[g];
+    const lam = Math.max(0, L[0] * nx + L[1] * ny + L[2] * nz);
+    let b = lam, g, col, glow = false;
+    if (kind === NEEDLE) {
+      b = Math.min(1, (0.1 + 0.9 * lam) * (0.5 + 0.5 * PU[i]) * NOISE[i]);
+      g = mode === "ascii" ? RAMP[Math.floor(b * 10)] : msg[LET[i] % msg.length];
+      col = PAL[Math.floor(b * 10)];
+    } else if (kind === GARLAND) {        // string lights: a glow chasing along the spiral
+      const p = 0.5 + 0.5 * Math.sin(PY[i] * 40 - t * 6);
+      g = p > 0.7 ? "*" : "~"; col = `hsl(46 100% ${52 + 40 * p}%)`; glow = p > 0.5;
+    } else if (kind === TRUNK) { g = "#"; col = "#8a5a2b"; }
+    else {                                // gift box / ribbon
+      b = 0.2 + 0.8 * lam;
+      if (kind === RIBBON) { g = RAMP[Math.floor(b * 10)]; col = `hsl(45 95% ${35 + 50 * b}%)`; }
+      else { g = (k + Math.floor(k / COLS)) % 2 ? "X" : "#"; col = `hsl(${GIFTS[OBJ[i] - 1].hue} 75% ${22 + 45 * b}%)`; }
+    }
+    G[k] = g; C[k] = col; GL[k] = glow;
   }
 
-  const anchor = (th, y) => { const r = radius(y, th) * 1.02; return view(r * Math.sin(th), y, r * Math.cos(th)); };
-  LIGHTS.forEach((l, i) => {
-    if (t < l.at) return;
-    lights++;
-    const [c, r, d] = anchor(l.th, l.y);
-    if (onTop(c, r, d)) put(c, r, Math.sin(t * 4 + i) > -0.3 ? "o" : "*", l.c, true);
-  });
-  ORN.map(o => [o, ...anchor(o.th, o.y)]).sort((a, b) => a[3] - b[3])
-    .forEach(([o, c, r, d]) => {
-      if (t < o.at || !onTop(c, r, d) || Math.cos(o.th - ang) < 0.3) return;
-      stamp(o.s, c - (o.s.art[0].length >> 1), r - (o.s.art.length >> 1), null, t - o.at < 0.4);
-    });
-  const floor = (x, z) => [Math.round(cx + x * SX), Math.round(cy + (cp + z * sp) * SY)];
-  if (t > DOG_AT) {                       // poodle sits on the floor, front-left
-    const rows = Math.min(DOG.art.length, Math.floor((t - DOG_AT) * 8) + 1), [c, r] = floor(-0.6, 0.85);
-    stamp(DOG, c - 10, r - DOG.art.length + 1, null, false, rows);
+  if (sk > 0) {                           // halo + slow rays behind the star
+    const [sx, sy] = proj(0, STAR_Y, 0, 1, 0), px = sx * cs, py = sy * ch, R = 0.5 * SX * cs * sk;
+    ctx.save(); ctx.globalCompositeOperation = "lighter";
+    const gr = ctx.createRadialGradient(px, py, 0, px, py, R);
+    gr.addColorStop(0, `rgba(255,214,90,${0.35 + 0.1 * Math.sin(t * 3)})`); gr.addColorStop(1, "rgba(255,214,90,0)");
+    ctx.fillStyle = gr; ctx.fillRect(px - R, py - R, 2 * R, 2 * R);
+    ctx.translate(px, py); ctx.rotate(t * 0.3);
+    for (let j = 0; j < 4; j++) {
+      ctx.rotate(Math.PI / 4);
+      const len = R * (j % 2 ? 0.8 : 1.4), lg = ctx.createLinearGradient(0, -len, 0, len);
+      lg.addColorStop(0, "rgba(255,230,150,0)"); lg.addColorStop(0.5, "rgba(255,240,190,0.55)");
+      lg.addColorStop(1, "rgba(255,230,150,0)");
+      ctx.fillStyle = lg; ctx.fillRect(-dpr, -len, 2 * dpr, 2 * len);
+    }
+    ctx.restore();
   }
-  GIFTS.forEach(g => {                    // presents drop from the sky
-    if (t < g.at) return;
-    const [c, r] = floor(g.x, 0.75), fall = -3 + 0.8 * ROWS * (t - g.at) ** 2;
-    stamp(GIFT, c - 2, Math.round(Math.min(r - 2, fall)), g.c);
-  });
-  if (t > STAR_AT) {
-    const rows = Math.min(STAR.art.length, Math.floor((t - STAR_AT) * 6) + 1), [c, r] = view(0, 0.86, 0);
-    stamp(STAR, c - 4, r - 5, null, true, rows);
-  }
-
   ctx.font = `bold ${fs}px ui-monospace, Menlo, Consolas, monospace`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   for (let i = 0; i < G.length; i++) {
@@ -265,7 +341,50 @@ function draw() {
     ctx.shadowColor = C[i]; ctx.shadowBlur = GL[i] ? 7 * dpr : 0;
     ctx.fillText(G[i], ((i % COLS) + 0.5) * cs, (Math.floor(i / COLS) + 0.5) * ch);
   }
-  ctx.shadowBlur = 0;
+
+  const anchor = (th, y) => { const r = radius(y, th) * 1.02; return proj(r * Math.sin(th), y, r * Math.cos(th), ca, sa); };
+  LIGHTS.forEach((l, i) => {              // round glowing bulbs
+    if (t < l.at) return;
+    lights++;
+    const [c, r, d] = anchor(l.th, l.y);
+    if (!onTop(c, r, d)) return;
+    const px = (c + 0.5) * cs, py = (r + 0.5) * ch, R = cs * 0.8;
+    ctx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 3 + i * 1.7);
+    ctx.shadowColor = l.c; ctx.shadowBlur = 12 * dpr; ctx.fillStyle = l.c;
+    ctx.beginPath(); ctx.arc(px, py, R, 0, TAU); ctx.fill();
+    ctx.shadowBlur = 0; ctx.fillStyle = "rgba(255,255,255,0.8)";
+    ctx.beginPath(); ctx.arc(px - R * 0.3, py - R * 0.3, R * 0.35, 0, TAU); ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+  ORN.map(o => [o, ...anchor(o.th, o.y)]).sort((a, b) => a[3] - b[3])
+    .forEach(([o, c, r, d]) => {
+      const face = Math.cos(o.th - ang);
+      if (t < o.at || face < 0.3 || !onTop(c, r, d)) return;
+      const k = cs * 0.16 * o.size * Math.min(1, ease(Math.min(1, (t - o.at) / 0.4)));
+      ctx.save(); ctx.translate((c + 0.5) * cs, (r + 0.5) * ch); ctx.scale(k * face, k);
+      ctx.globalAlpha = 0.55 + 0.45 * face; ctx.shadowColor = "rgba(255,255,255,0.35)"; ctx.shadowBlur = 6 * dpr;
+      o.draw(ctx); ctx.restore();
+    });
+  ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+  if (t > DOG_AT) {                       // poodle on the floor, front-left, with a soft shadow
+    const [fc, fr] = proj(-0.62, -1, 0.95, 1, 0), rows = Math.min(DOG.length, Math.floor((t - DOG_AT) * 8) + 1);
+    const dw = cs * 1.55, dh = ch * 1.55;   // dog uses a bigger cell than the tree
+    const x0 = fc * cs - 10 * dw, y0 = (fr + 1) * ch - DOG.length * dh;
+    ctx.fillStyle = "rgba(0,0,10,0.45)";
+    ctx.beginPath(); ctx.ellipse(x0 + 9 * dw, y0 + DOG.length * dh, 10 * dw, 1.1 * dh, 0, 0, TAU); ctx.fill();
+    ctx.font = `bold ${fs * 1.55}px ui-monospace, Menlo, Consolas, monospace`;
+    for (let r = 0; r < rows; r++) {
+      const a = DOG[r].findIndex(Boolean), b = DOG[r].findLastIndex(Boolean) + 1;
+      ctx.fillStyle = "#0e1433";            // hide the tree behind the dog
+      ctx.fillRect(x0 + a * dw, y0 + r * dh, (b - a) * dw, dh + 1);
+      DOG[r].forEach((cell, c) => cell && (ctx.fillStyle = cell[1],
+        ctx.fillText(cell[0], x0 + (c + 0.5) * dw, y0 + (r + 0.5) * dh)));
+    }
+  }
+  if (sk > 0) {
+    const [sx, sy] = proj(0, STAR_Y, 0, 1, 0), turn = Math.cos(t * 0.8);
+    drawStar((sx + 0.5) * cs, (sy + 0.5) * ch, 0.24 * SX * cs * sk, turn * 0.8 + 0.2 * Math.sign(turn));
+  }
   $("hr").textContent = ((ang * 180 / Math.PI) % 360).toFixed(2) + "°";
   $("hl").textContent = lights;
   $("hn").textContent = shown.toLocaleString();
@@ -273,7 +392,7 @@ function draw() {
   $("greet").textContent = t < TEXT_AT ? "" : [...LAST].slice(0, Math.floor((t - TEXT_AT) * 10)).join("");
 }
 
-// 5) the code panel types out this very script while the tree builds
+// 6) the code panel types out this very script while the tree builds
 const SRC = $("app").textContent.trim().split("\n");
 const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 const hl = s => esc(s).replace(
@@ -291,7 +410,7 @@ function code() {
   $("bar").style.width = t / LOOP * 100 + "%";
 }
 
-// 6) main loop, capped at 40 fps
+// 7) main loop, capped at 40 fps
 let last = -1e9, frames = 0, fpsAt = 0;
 function tick(now) {
   requestAnimationFrame(tick);
