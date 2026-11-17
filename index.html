@@ -9,7 +9,7 @@ body{margin:0;min-height:100svh;background:var(--bg);color:var(--ink);display:gr
   font:15px/1.4 -apple-system,system-ui,"Apple SD Gothic Neo",sans-serif;padding:16px}
 .card{width:100%;max-width:520px;background:var(--panel);border-radius:20px;overflow:hidden;
   box-shadow:0 10px 40px #0008;display:grid}
-.stage{position:relative;aspect-ratio:1/1.5;background:radial-gradient(#171f4a,#0b0f2a)}
+.stage{position:relative;aspect-ratio:1/1.4;background:radial-gradient(#171f4a,#0b0f2a)}
 canvas{width:100%;height:100%;display:block}
 .hud{position:absolute;left:18px;top:16px;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;color:var(--sub);pointer-events:none}
 .hud b{display:block;font-size:20px;color:#fff;margin-bottom:6px}
@@ -55,7 +55,7 @@ pre .cur{background:#161c44;border-left-color:var(--ac)}
 </main>
 <script id=app>
 const $ = id => document.getElementById(id);
-const GREET = "MERRY CHRISTMAS 2026", LAST = ["Merry Christmas!", "주희"];
+const GREET = "MERRY CHRISTMAS 2026", LAST = "Merry Christmas! 주희";
 const FPS = 40, SPIN = 0.35;             // rad/s, clockwise seen from above
 const PITCH = 30 * Math.PI / 180, cp = Math.cos(PITCH), sp = Math.sin(PITCH);  // camera 30° up
 const GROW = 13, LIT = [13, 18], ORN_AT = 15, DOG_AT = 18;
@@ -86,8 +86,11 @@ const GIFTS = [                           // [x, z, w, h, d, yaw, hue, stacked o
   [-1.0, -0.15, 0.28, 0.22, 0.26, 0.3, 355], [1.0, -0.2, 0.26, 0.26, 0.26, -0.4, 205],
   [-1.0, -0.15, 0.17, 0.14, 0.16, -0.5, 320, 0], [1.0, -0.2, 0.16, 0.13, 0.16, 0.6, 140, 1],
   [-0.8, -0.5, 0.24, 0.2, 0.22, -0.2, 175], [0.8, -0.5, 0.22, 0.2, 0.22, 0.7, 30],
-  [0.72, 0.74, 0.22, 0.18, 0.22, 0.25, 270]]
-  .map(([x, z, w, h, d, yaw, hue, on], i) => ({ x, z, w, h, d, yaw, hue, on, at: GIFT_AT + i * 0.45 }));
+  [0.72, 0.74, 0.22, 0.18, 0.22, 0.25, 270],
+  [-0.2, 0.98, 0.24, 0.2, 0.22, 0.4, 50], [0.18, 1.0, 0.26, 0.22, 0.24, -0.3, 0],
+  [0.18, 1.0, 0.16, 0.13, 0.15, 0.5, 120, 8], [0.5, 0.88, 0.2, 0.26, 0.2, 0.2, 290],
+  [0.9, 0.5, 0.2, 0.17, 0.2, -0.6, 190], [-0.02, 1.16, 0.18, 0.14, 0.18, 0.9, 330]]
+  .map(([x, z, w, h, d, yaw, hue, on], i) => ({ x, z, w, h, d, yaw, hue, on, at: GIFT_AT + i * 0.3 }));
 GIFTS.forEach(g => g.rest = g.on == null ? -1 : -1 + GIFTS[g.on].h);
 
 // 2) everything becomes a dense point cloud, sampled finer than one cell
@@ -168,89 +171,60 @@ const DOG = [
   const n = norm([-gx, -gy, 1.2]), b = Math.max(0, -0.55 * n[0] + 0.55 * n[1] + 0.63 * n[2]);
   return ["@", `hsl(225 16% ${45 + 55 * b}%)`];   // same glyph, light does the 3D
 }));
-function drawStar(px, py, R, turn) {      // faceted gold star, spins by squashing x
-  const v = Array.from({ length: 10 }, (_, k) => {
-    const a = -Math.PI / 2 + k * Math.PI / 5, r = k % 2 ? R * 0.42 : R;
-    return [px + Math.cos(a) * r * turn, py + Math.sin(a) * r];
-  });
-  ctx.save(); ctx.shadowColor = "#ffcf4d"; ctx.shadowBlur = 18 * dpr;
-  v.forEach((p, k) => {                   // each arm = one lit + one shaded facet
-    const q = v[(k + 1) % 10], mid = -Math.PI / 2 + (k + 0.5) * Math.PI / 5;
-    const b = 0.5 + 0.3 * Math.cos(mid + 2.4) * Math.sign(turn) + (k % 2 ? -0.18 : 0.18);
-    ctx.fillStyle = `hsl(${42 + b * 8} 95% ${30 + 55 * b}%)`;
-    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(...p); ctx.lineTo(...q); ctx.fill();
-    ctx.shadowBlur = 0;
-  });
-  ctx.strokeStyle = "rgba(255,245,200,0.9)"; ctx.lineWidth = Math.max(1, R * 0.03);
-  ctx.beginPath(); v.forEach((p, k) => k ? ctx.lineTo(...p) : ctx.moveTo(...p)); ctx.closePath(); ctx.stroke();
-  const gl = ctx.createRadialGradient(px, py, 0, px, py, R * 0.35);
-  gl.addColorStop(0, "rgba(255,255,240,0.95)"); gl.addColorStop(1, "rgba(255,255,240,0)");
-  ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(px, py, R * 0.35, 0, TAU); ctx.fill();
-  ctx.restore();
-}
-
-// 4) ornaments drawn as little vector pictures: climbing shoe + pointe shoes
-
-function climbShoe(g) {                   // side view, downturned toe on the left
-  g.translate(-48, -28);
-  g.fillStyle = "#ff8a1f";
-  g.beginPath(); g.moveTo(80, 6); g.quadraticCurveTo(94, 24, 88, 44);
-  g.lineTo(60, 48); g.quadraticCurveTo(30, 50, 12, 44);
-  g.quadraticCurveTo(0, 38, 8, 30); g.quadraticCurveTo(30, 22, 52, 10); g.closePath(); g.fill();
-  g.lineCap = "round"; g.strokeStyle = "#17c3b2"; g.lineWidth = 7;     // velcro straps
-  [[30, 26, 37, 44], [44, 18, 51, 45], [58, 11, 65, 45]].forEach(([a, b, c, d]) => {
-    g.beginPath(); g.moveTo(a, b); g.lineTo(c, d); g.stroke(); });
-  g.strokeStyle = "#2b2d3a"; g.lineWidth = 8;                          // rubber sole + toe cap
-  g.beginPath(); g.moveTo(90, 42); g.lineTo(60, 50); g.quadraticCurveTo(30, 53, 11, 46);
-  g.quadraticCurveTo(1, 40, 7, 31); g.stroke();
-  g.lineWidth = 3; g.beginPath(); g.arc(82, 3, 5, 0, TAU); g.stroke();  // heel loop
-}
-function balletShoes(g) {                 // pair of pointe shoes hanging by ribbons
-  const shoe = (x, y, rot, c1, c2) => {
-    g.save(); g.translate(x, y); g.rotate(rot);
-    const gr = g.createLinearGradient(-12, 0, 10, 0);
-    gr.addColorStop(0, c1); gr.addColorStop(1, c2); g.fillStyle = gr;
-    g.beginPath(); g.moveTo(-9, -18); g.quadraticCurveTo(-14, -2, -8, 14);
-    g.quadraticCurveTo(-6, 22, 0, 22); g.quadraticCurveTo(7, 22, 8, 14);
-    g.quadraticCurveTo(11, 0, 6, -14); g.quadraticCurveTo(-1, -11, -9, -18); g.fill();
-    g.fillStyle = "#b8466f"; g.beginPath(); g.ellipse(-1.5, -15, 7, 2.5, 0.35, 0, TAU); g.fill();
-    g.restore();
-  };
-  g.strokeStyle = "#ffc9de"; g.lineWidth = 2.5;
-  [[-12, -6], [12, -4]].forEach(([x, y]) => {
-    g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x * 0.2, -22, 0, -34); g.stroke(); });
-  shoe(12, 12, 0.2, "#e88aae", "#ffb3cf");
-  shoe(-10, 10, -0.15, "#ffa6c9", "#ffe0ec");
-  g.fillStyle = "#ff6fa5";
-  [[-5, 0.4], [5, -0.4]].forEach(([x, r]) => { g.beginPath(); g.ellipse(x, -34, 5, 3, r, 0, TAU); g.fill(); });
-}
-function hold(seed, color) {              // resin climbing hold with a bolt hole
-  const pts = Array.from({ length: 9 }, (_, i) => {
-    const a = i / 9 * TAU, r = 18 * (0.7 + 0.5 * hash(seed, i));
-    return [Math.cos(a) * r * 1.25, Math.sin(a) * r];
-  });
-  const mid = i => { const p = pts[i % 9], q = pts[(i + 1) % 9]; return [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2]; };
-  return g => {
-    g.beginPath(); g.moveTo(...mid(0));
-    for (let i = 1; i <= 9; i++) g.quadraticCurveTo(...pts[i % 9], ...mid(i));
-    g.fillStyle = color; g.fill();
-    const sheen = g.createRadialGradient(-9, -8, 1, -4, -3, 26);
-    sheen.addColorStop(0, "rgba(255,255,255,0.65)"); sheen.addColorStop(0.5, "rgba(255,255,255,0)");
-    sheen.addColorStop(1, "rgba(0,0,20,0.35)");
-    g.fillStyle = sheen; g.fill();
-    g.strokeStyle = "rgba(0,0,20,0.4)"; g.lineWidth = 2.5; g.stroke();
-    g.fillStyle = "rgba(255,255,255,0.35)";        // speckled texture
-    for (let i = 0; i < 7; i++) { g.beginPath(); g.arc((hash(seed, i + 20) - 0.5) * 26, (hash(seed, i + 40) - 0.5) * 18, 1.2, 0, TAU); g.fill(); }
-    g.fillStyle = "#1a1c28"; g.beginPath(); g.arc(1, 1, 4.5, 0, TAU); g.fill();   // bolt
-    g.strokeStyle = "#c9ccd6"; g.lineWidth = 1.5; g.stroke();
-  };
-}
-const HOLD_COLORS = ["#ff3b6b", "#ffd23f", "#2fd47a", "#3b8bff", "#b05cff", "#ff8a1f", "#19d3d3", "#ff5fd2"];
-const ORN = [[climbShoe, 0.3, 0.36, 1], [balletShoes, 1.4, 0.12, 1.3], [climbShoe, 2.5, -0.22, 1],
-  [balletShoes, 3.6, 0.5, 1.2], [climbShoe, 4.7, -0.5, 1.1], [balletShoes, 5.6, -0.3, 1.3],
+// 4) ornaments + star as character art (blocks shade them, colors pick the part)
+const spr = (art, color) => ({ art: art.map(r => [...r]), color });
+const CLIMB = spr([                       // climbing shoe: downturned toe, velcro, rubber sole
+  "       ▄██▄ ",
+  "    ▄█▓█▓██ ",
+  "  ▄█▓█▓████ ",
+  " ██████████▌",
+  "▀▀▀▀▀▀▀▀▀▀▀ "], g => g === "▀" ? "#555a6e" : g === "▓" ? "#19d3c0" : "#ff8a1f");
+const BALLET = spr([                      // pair of pointe shoes hanging by ribbons
+  "  \\   /  ",
+  "   \\ /   ",
+  "   / \\   ",
+  " ▄██ ██▄ ",
+  " ███ ███ ",
+  "  ██ ██  ",
+  "  ▀▀ ▀▀  "], (g, r, c) => "\\/".includes(g) ? "#ffd3e4" : c > 4 ? "#f27fb0" : "#ffa3c8");
+const HOLD_SHAPES = [
+  [" ▄██▄ ", "██o▓██", " ▀▀▀▀ "], ["▄▄▄▄▄▄", "▀▓o▀▀▀"],
+  ["██▄▄  ", "██o▓██", " ▀▀▀▀▀"], [" ▄▄ ", "█o▓█", "▀██▀"]];
+const HOLD_COLORS = [["#ff3b6b", "#c41f4a"], ["#ffd23f", "#d9a400"], ["#2fd47a", "#17a157"],
+  ["#3b8bff", "#1f5fc4"], ["#b05cff", "#7e2fd1"], ["#ff8a1f", "#cc5f00"], ["#19d3d3", "#0f9a9a"], ["#ff5fd2", "#cc2fa3"]];
+const holdSpr = i => spr(HOLD_SHAPES[i % 4], g => g === "o" ? "#14151f" : g === "▓" ? HOLD_COLORS[i][1] : HOLD_COLORS[i][0]);
+let starSide = 1;
+const STAR = spr([
+  "     █     ",
+  "    ███    ",
+  "▄▄▄█████▄▄▄",
+  " ▀███████▀ ",
+  "   █████   ",
+  "  ██▀ ▀██  ",
+  " ▀▀     ▀▀ "], (g, r, c) => c === 5 ? "#fff6c8" : (c - 5) * starSide < 0 ? "#ffe066" : "#e0a000");
+const ORN = [[CLIMB, 0.3, 0.36], [BALLET, 1.4, 0.12], [CLIMB, 2.5, -0.22],
+  [BALLET, 3.6, 0.5], [CLIMB, 4.7, -0.5], [BALLET, 5.6, -0.3],
   ...[[0.85, -0.05], [1.95, 0.42], [3.05, -0.48], [4.15, 0.2], [5.2, 0.55], [6.1, -0.1], [0.05, -0.62], [2.95, 0.15]]
-    .map(([th, y], i) => [hold(i + 1, HOLD_COLORS[i]), th, y, 0.8 + 0.35 * hash(i, 9)])]
-  .map(([draw, th, y, size], i) => ({ draw, th, y, size, at: ORN_AT + i * 0.22 }));
+    .map(([th, y], i) => [holdSpr(i), th, y])]
+  .map(([s, th, y], i) => ({ s, th, y, at: ORN_AT + i * 0.22 }));
+function drawSprite(s, px, py, k, glow) { // centered, opaque rows so the tree doesn't show through
+  const w = cs * k, hh = ch * k, cols = Math.max(...s.art.map(r => r.length));
+  const x0 = px - cols * w / 2, y0 = py - s.art.length * hh / 2;
+  ctx.font = `bold ${fs * k}px ui-monospace, Menlo, Consolas, monospace`;
+  s.art.forEach((row, r) => {
+    const a = row.findIndex(g => g !== " "), b = row.findLastIndex(g => g !== " ") + 1;
+    ctx.shadowBlur = 0; ctx.fillStyle = "#0e1433";
+    ctx.fillRect(x0 + a * w, y0 + r * hh, (b - a) * w, hh + 1);
+    row.forEach((g, c) => {
+      if (g === " ") return;
+      ctx.fillStyle = s.color(g, r, c);
+      if (glow) { ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = glow; }
+      ctx.fillText(g, x0 + (c + 0.5) * w, y0 + (r + 0.5) * hh);
+    });
+  });
+  ctx.shadowBlur = 0;
+}
+
 const LIGHTS = Array.from({ length: 150 }, (_, i) => ({ th: rnd() * TAU,
   y: -0.78 + rnd() * 1.55, c: COLORS[i % 6], at: LIT[0] + i * (LIT[1] - LIT[0]) / 150 }));
 const bg = Array.from({ length: 70 }, () => ({ x: rnd(), y: rnd(), p: rnd() * 6, v: 0.01 + rnd() * 0.02 }));
@@ -265,7 +239,7 @@ function resize() {
   COLS = Math.min(130, Math.max(72, Math.round(r.width / 4.2)));
   cs = cv.width / COLS; fs = cs / 0.6; ch = fs * 1.05;
   ROWS = Math.floor(cv.height / ch);
-  const S = Math.min(cv.height * 0.66 / 2.45, cv.width * 0.46);  // px per world unit
+  const S = Math.min(cv.height * 0.7 / 2.45, cv.width * 0.46);  // px per world unit
   SX = S / cs; SY = S / ch; cx = COLS / 2; cy = ROWS * 0.03 + 1.12 * SY;
   G = new Array(COLS * ROWS); C = []; GL = [];
   Z = new Float32Array(COLS * ROWS); W = new Int32Array(COLS * ROWS);
@@ -273,18 +247,16 @@ function resize() {
 }
 let CAP = [], CAP_Y = 0, BC = 0, bcs = 0, bch = 0;
 function banner() {                       // greeting rasterised on a finer ASCII grid
-  CAP_Y = Math.round(ROWS * 0.73) * ch;
-  BC = Math.round(COLS / 0.55); bcs = cv.width / BC; bch = bcs * ch / cs;
+  CAP_Y = Math.round(ROWS * 0.82) * ch;
+  BC = Math.round(COLS / 0.45); bcs = cv.width / BC; bch = bcs * ch / cs;
   const rows = Math.floor((cv.height - CAP_Y) / bch), k = 6, w = BC * k, bh = k * ch / cs, h = Math.round(rows * bh);
   const oc = document.createElement("canvas"); oc.width = w; oc.height = h;
   const g = oc.getContext("2d");
   g.fillStyle = "#fff"; g.textAlign = "center"; g.textBaseline = "middle";
   const font = px => `900 ${px}px -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif`;
-  [[LAST[0], 0.42, 0.22], [LAST[1], 0.5, 0.7]].forEach(([txt, size, y]) => {
-    let px = h * size; g.font = font(px);
-    px *= Math.min(1, w * 0.94 / g.measureText(txt).width); g.font = font(px);
-    g.fillText(txt, w / 2, h * y);
-  });
+  let fpx = h * 0.6; g.font = font(fpx);
+  fpx *= Math.min(1, w * 0.9 / g.measureText(LAST).width); g.font = font(fpx);
+  g.fillText(LAST, w / 2, h * 0.45);
   const px = g.getImageData(0, 0, w, h).data;
   CAP = [];
   for (let r = 0; r < rows; r++) for (let c = 0; c < BC; c++) {
@@ -292,7 +264,7 @@ function banner() {                       // greeting rasterised on a finer ASCI
     for (let y = Math.floor(r * bh); y < Math.floor((r + 1) * bh); y++)
       for (let x = c * k; x < (c + 1) * k; x++, n++) sum += px[(y * w + x) * 4 + 3];
     const cov = sum / n / 255;
-    if (cov > 0.25) CAP.push([c, r, cov, r < rows * 0.47 ? 0 : 1]);
+    if (cov > 0.25) CAP.push([c, r, cov]);
   }
 }
 addEventListener("resize", resize); resize();
@@ -387,37 +359,32 @@ function draw() {
 
   if (t > TEXT_AT) {                      // ASCII greeting sweeps in, left to right
     ctx.font = `bold ${fs * bcs / cs}px ui-monospace, Menlo, Consolas, monospace`;
-    CAP.forEach(([c, r, cov, line]) => {
-      const front = (t - TEXT_AT - line * 1.2) / (line ? 0.8 : 1.2) * BC - c;
+    CAP.forEach(([c, r, cov]) => {
+      const front = (t - TEXT_AT) / 1.8 * BC - c;
       if (front < 0) return;
       const sh = 0.6 + 0.4 * Math.sin(c * 0.18 - t * 3 + r * 0.3);
-      ctx.fillStyle = front < 3 ? "#fffbe0" : line ? `hsl(${335 + 15 * sh} 95% ${55 + 33 * cov * sh}%)`
-        : `hsl(${(355 + 130 * c / BC) % 360} 95% ${55 + 33 * cov * sh}%)`;
-      ctx.fillText(front < 3 ? "*" : RAMP[Math.min(10, Math.floor(cov * 10.9))], (c + 0.5) * bcs, CAP_Y + (r + 0.5) * bch);
+      ctx.fillStyle = front < 3 ? "#fffbe0" : `hsl(${46 + 6 * sh} 100% ${50 + 35 * cov * sh}%)`;
+      ctx.fillText(front < 3 ? "*" : "+*#@"[Math.min(3, Math.floor(cov * 4))], (c + 0.5) * bcs, CAP_Y + (r + 0.5) * bch);
     });
   }
   const anchor = (th, y) => { const r = radius(y, th) * 1.02; return proj(r * Math.sin(th), y, r * Math.cos(th), ca, sa); };
-  LIGHTS.forEach((l, i) => {              // round glowing bulbs
+  ctx.font = `bold ${fs * 1.45}px ui-monospace, Menlo, Consolas, monospace`;
+  LIGHTS.forEach((l, i) => {              // big glowing bulbs
     if (t < l.at) return;
     lights++;
     const [c, r, d] = anchor(l.th, l.y);
     if (!onTop(c, r, d)) return;
-    const px = (c + 0.5) * cs, py = (r + 0.5) * ch, R = cs * 0.8;
     ctx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 3 + i * 1.7);
     ctx.shadowColor = l.c; ctx.shadowBlur = 12 * dpr; ctx.fillStyle = l.c;
-    ctx.beginPath(); ctx.arc(px, py, R, 0, TAU); ctx.fill();
-    ctx.shadowBlur = 0; ctx.fillStyle = "rgba(255,255,255,0.8)";
-    ctx.beginPath(); ctx.arc(px - R * 0.3, py - R * 0.3, R * 0.35, 0, TAU); ctx.fill();
+    ctx.fillText("●", (c + 0.5) * cs, (r + 0.5) * ch);
   });
   ctx.globalAlpha = 1;
   ORN.map(o => [o, ...anchor(o.th, o.y)]).sort((a, b) => a[3] - b[3])
     .forEach(([o, c, r, d]) => {
       const face = Math.cos(o.th - ang);
-      if (t < o.at || face < 0.3 || !onTop(c, r, d)) return;
-      const k = cs * 0.16 * o.size * Math.min(1, ease(Math.min(1, (t - o.at) / 0.4)));
-      ctx.save(); ctx.translate((c + 0.5) * cs, (r + 0.5) * ch); ctx.scale(k * face, k);
-      ctx.globalAlpha = 0.55 + 0.45 * face; ctx.shadowColor = "rgba(255,255,255,0.35)"; ctx.shadowBlur = 6 * dpr;
-      o.draw(ctx); ctx.restore();
+      if (t < o.at || face < 0.35 || !onTop(c, r, d)) return;
+      ctx.globalAlpha = 0.5 + 0.5 * face;
+      drawSprite(o.s, (c + 0.5) * cs, (r + 0.5) * ch, 1.25 * Math.min(1, ease(Math.min(1, (t - o.at) / 0.4))));
     });
   ctx.shadowBlur = 0; ctx.globalAlpha = 1;
   if (t > DOG_AT) {                       // poodle on the floor, front-left, with a soft shadow
@@ -435,9 +402,18 @@ function draw() {
         ctx.fillText(cell[0], x0 + (c + 0.5) * dw, y0 + (r + 0.5) * dh)));
     }
   }
-  if (sk > 0) {
-    const [sx, sy] = proj(0, STAR_Y, 0, 1, 0), turn = Math.cos(t * 0.8);
-    drawStar((sx + 0.5) * cs, (sy + 0.5) * ch, 0.24 * SX * cs * sk, turn * 0.8 + 0.2 * Math.sign(turn));
+  if (sk > 0) {                           // gold block star + orbiting sparkles
+    const [sx, sy] = proj(0, STAR_Y, 0, 1, 0), px = (sx + 0.5) * cs, py = (sy + 0.5) * ch;
+    starSide = Math.sign(Math.cos(t * 0.8)) || 1;
+    drawSprite(STAR, px, py, 1.4 * sk, 10 * dpr);
+    ctx.font = `bold ${fs * 1.2}px ui-monospace, Menlo, Consolas, monospace`;
+    for (let j = 0; j < 6; j++) {
+      const a = t * 0.7 + j * TAU / 6, R = 0.3 * SX * cs * (1 + 0.15 * Math.sin(t * 2 + j));
+      ctx.globalAlpha = 0.5 + 0.5 * Math.sin(t * 4 + j * 2);
+      ctx.fillStyle = "#fff1a8"; ctx.shadowColor = "#ffd23f"; ctx.shadowBlur = 8 * dpr;
+      ctx.fillText(j % 2 ? "+" : "*", px + Math.cos(a) * R, py + Math.sin(a) * R * 0.8);
+    }
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
   }
   $("hr").textContent = ((ang * 180 / Math.PI) % 360).toFixed(2) + "°";
   $("hl").textContent = lights;
