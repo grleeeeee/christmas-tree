@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="ko"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Merry Christmas Tree</title>
+<style>
+:root{--bg:#0e1f17;--panel:#0d1230;--ink:#d8e4dc;--sub:#7d8aa8;--ac:#ff6a3d}
+*{box-sizing:border-box}
+body{margin:0;min-height:100svh;background:var(--bg);color:var(--ink);display:grid;place-items:center;
+  font:15px/1.4 -apple-system,system-ui,"Apple SD Gothic Neo",sans-serif;padding:16px}
+.card{width:100%;max-width:520px;background:var(--panel);border-radius:20px;overflow:hidden;
+  box-shadow:0 10px 40px #0008;display:grid}
+.stage{position:relative;aspect-ratio:1/1.1;background:radial-gradient(#171f4a,#0b0f2a)}
+canvas{width:100%;height:100%;display:block}
+.hud{position:absolute;left:18px;top:16px;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;color:var(--sub);pointer-events:none}
+.hud b{display:block;font-size:20px;color:#fff;margin-bottom:6px}
+.hud i{color:#cfd8f5;font-style:normal;margin-left:6px}
+#clock{position:absolute;right:18px;top:18px;font:12px ui-monospace,Menlo,monospace;color:var(--sub)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#ffb020;margin-right:6px}
+.code{background:#0a0e26;font:12px/18px ui-monospace,Menlo,Consolas,monospace;min-width:0}
+.code header{display:flex;justify-content:space-between;padding:10px 16px;color:var(--sub);background:#0f1433}
+pre{margin:0;height:216px;overflow:hidden;padding:8px 0;color:#d6dcf5;white-space:pre}
+pre div{padding-left:16px;border-left:3px solid transparent}
+pre .cur{background:#161c44;border-left-color:var(--ac)}
+.ln{display:inline-block;width:34px;color:#4a5478}
+.cur .ln{color:#fff}
+.k{color:#c792ea}.s{color:#9ece6a}.n{color:#ff9e64}.f{color:#5aa9ff}.c{color:#5a6590;font-style:italic}
+.bar{height:3px;background:#222a52}.bar i{display:block;height:100%;width:0;background:#f0502d}
+.ctl{display:flex;gap:8px;padding:12px 16px;background:#0a0e26;flex-wrap:wrap}
+.ctl button,.ctl input{font:inherit;color:var(--ink);background:#141a40;border:1px solid #2a3366;border-radius:10px;padding:9px 12px}
+.ctl input{flex:1;min-width:140px}
+.note{grid-column:1/-1;color:var(--sub);font-size:12px;padding:0 16px 14px;background:#0a0e26}
+@media(min-width:900px){
+  .card{max-width:1100px;grid-template-columns:1.25fr 1fr;grid-template-rows:auto auto auto}
+  .stage{grid-row:1/4;aspect-ratio:auto;min-height:640px}
+  pre{height:auto;min-height:420px}
+  .code{display:flex;flex-direction:column}.code pre{flex:1}
+}
+</style>
+<main class=card>
+  <section class=stage>
+    <canvas id=cv></canvas>
+    <div class=hud><b>@merry.tree</b>rotation<i id=hr></i><br>lights<i id=hl></i><br>letters<i id=hn></i></div>
+    <div id=clock></div>
+  </section>
+  <section class=code>
+    <header><span>christmas_tree.js</span><span><i class=dot></i>running <span id=fps>30</span> fps</span></header>
+    <pre id=src></pre>
+    <div class=bar><i id=bar></i></div>
+  </section>
+  <div class=ctl>
+    <input id=msg placeholder="트리에 새길 문구" maxlength=40 value="MERRY CHRISTMAS 2026">
+    <button id=mode>모드: ascii</button><button id=pause>일시정지</button>
+  </div>
+  <div class=note>왼쪽 트리를 그리는 이 페이지의 실제 코드가 오른쪽에 타이핑돼요. 서버 없이 브라우저에서만 돌아가요.</div>
+</main>
+<script id=app>
+const $ = id => document.getElementById(id);
+const GREET = "MERRY CHRISTMAS 2026";
+const GROW = 14, LIGHTS_AT = 14, STAR_AT = 27, LOOP = 42, SPIN = 0.35;
+const RAMP = " .:-=+*%#&@W";
+const COLORS = ["#ff5a5f", "#ffd23f", "#4cc9f0", "#c77dff", "#ff9f1c", "#80ed99"];
+const rnd = Math.random;
+let mode = "ascii", paused = false;
+let t = +new URLSearchParams(location.search).get("t") || 0;
+
+// 1) build the tree once: 4 stacked cones + a trunk
+const pts = [];
+for (let k = 0; k < 4; k++) {
+  const top = 0.8 - 0.38 * k, R = 0.3 + 0.16 * k;
+  for (let i = 0; i < 800; i++) {
+    const u = Math.sqrt(rnd()), a = rnd() * 6.283;
+    pts.push({ x: R*u*Math.cos(a), y: top - 0.55*u, z: R*u*Math.sin(a),
+      nx: 0.857*Math.cos(a), ny: 0.514, nz: 0.857*Math.sin(a) });
+  }
+}
+for (let i = 0; i < 160; i++) {
+  const a = rnd() * 6.283;
+  pts.push({ x: 0.09*Math.cos(a), y: -1 + rnd()*0.15, z: 0.09*Math.sin(a),
+    nx: Math.cos(a), ny: 0, nz: Math.sin(a), trunk: true });
+}
+pts.forEach(p => p.born = GROW * (p.y + 1) / 1.8 * 0.9 + rnd() * 1.2);
+const tree = pts.filter(p => !p.trunk);
+for (let i = 0; i < 150; i++) {          // pick 150 random needles as lights
+  const p = tree[Math.floor(rnd() * tree.length)];
+  p.light = { color: COLORS[i % 6], at: LIGHTS_AT + i * 0.08 };
+}
+const STAR = ["    *    ", "   ***   ", "*********", " ******* ",
+  "  *****  ", " ***.*** ", "**     **"];
+const bg = Array.from({ length: 70 }, () => ({ x: rnd(), y: rnd(), p: rnd() * 6, v: 0.01 + rnd() * 0.02 }));
+const PAL = [...RAMP].map((_, i) => `hsl(130 55% ${22 + i * 3.5}%)`);
+
+// 2) canvas + grid
+const cv = $("cv"), ctx = cv.getContext("2d");
+let COLS, ROWS, cs, ch, fs, dpr, G, C, Z, GL;
+function resize() {
+  const r = cv.getBoundingClientRect();
+  dpr = Math.min(devicePixelRatio || 1, 2);
+  cv.width = r.width * dpr; cv.height = r.height * dpr;
+  COLS = Math.max(50, Math.round(r.width / 6.5));
+  cs = cv.width / COLS; fs = cs * 1.6; ch = fs * 1.2;
+  ROWS = Math.floor(cv.height / ch);
+  G = new Array(COLS * ROWS); C = []; Z = []; GL = [];
+}
+addEventListener("resize", resize); resize();
+
+function put(c, r, z, glyph, color, glow) {
+  if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return;
+  const i = r * COLS + c;
+  if (G[i] && Z[i] > z) return;
+  G[i] = glyph; C[i] = color; Z[i] = z; GL[i] = glow;
+}
+
+function draw() {
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  for (const s of bg) {                  // twinkling stars + slow snow
+    ctx.fillStyle = `rgba(255,255,255,${0.35 + 0.35 * Math.sin(t * 2 + s.p)})`;
+    ctx.fillRect(s.x * cv.width, ((s.y + t * s.v) % 1) * cv.height, 1.5 * dpr, 1.5 * dpr);
+  }
+  G.fill(undefined);
+  const ang = t * SPIN, ca = Math.cos(ang), sa = Math.sin(ang);
+  const SY = ROWS * 0.43, SX = SY * ch / cs, cx = COLS / 2, cy = ROWS / 2 + 0.05 * SY;
+  const msg = ($("msg").value || GREET).replace(/\s/g, "") || "*";
+  let shown = 0, lights = 0;
+  pts.forEach((p, i) => {
+    if (t < p.born) return;
+    shown++;
+    const x = p.x * ca + p.z * sa, z = -p.x * sa + p.z * ca;
+    const nx = p.nx * ca + p.nz * sa, nz = -p.nx * sa + p.nz * ca;
+    const b = Math.min(1, 0.25 + 0.75 * Math.max(0, -0.35*nx + 0.45*p.ny + 0.8*nz));
+    const col = Math.round(cx + x * SX), row = Math.round(cy - p.y * SY);
+    const k = Math.floor(b * (RAMP.length - 1));
+    if (t - p.born < 0.5) return put(col, row, z, "*", "#eaffea", true);  // fresh sparkle
+    if (p.trunk) return put(col, row, z, "#", "#8a5a2b");
+    if (p.light && t >= p.light.at) {
+      lights++;
+      const on = 0.6 + 0.4 * Math.sin(t * 4 + i);
+      return put(col, row, z + 0.1, on > 0.5 ? "o" : ".", p.light.color, true);
+    }
+    put(col, row, z, mode === "ascii" ? RAMP[k] : msg[i % msg.length], PAL[k]);
+  });
+  if (t > STAR_AT) {                      // star billboard on top
+    const rows = Math.min(STAR.length, Math.floor((t - STAR_AT) * 6) + 1);
+    for (let r = 0; r < rows; r++) [...STAR[r]].forEach((g, c) =>
+      g !== " " && put(Math.round(cx) - 4 + c, Math.round(cy - 0.88 * SY) - 3 + r, 9, g, "#ffe14d", true));
+  }
+  ctx.font = `${fs}px ui-monospace, Menlo, Consolas, monospace`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for (let i = 0; i < G.length; i++) {
+    if (!G[i]) continue;
+    ctx.fillStyle = C[i];
+    ctx.shadowColor = C[i]; ctx.shadowBlur = GL[i] ? 8 * dpr : 0;
+    ctx.fillText(G[i], ((i % COLS) + 0.5) * cs, (Math.floor(i / COLS) + 0.5) * ch);
+  }
+  ctx.shadowBlur = 0;
+  $("hr").textContent = ((ang * 180 / Math.PI) % 360).toFixed(2) + "°";
+  $("hl").textContent = lights;
+  $("hn").textContent = shown.toLocaleString();
+  $("clock").innerHTML = `<i class=dot></i>t ${t.toFixed(1)}s`;
+}
+
+// 3) the code panel types out this very script
+const SRC = $("app").textContent.trim().split("\n");
+const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+const hl = s => esc(s).replace(
+  /(\/\/.*)|("[^"]*"|`[^`]*`)|\b(const|let|function|return|if|for|of)\b|\b(\d[\d.]*)\b|\b([a-zA-Z_]\w*)(?=\()/g,
+  (m, c, st, kw, n, f) => `<span class=${c ? "c" : st ? "s" : kw ? "k" : n ? "n" : "f"}>${m}</span>`);
+function code() {
+  const p = t / LOOP * SRC.length, cur = Math.min(SRC.length - 1, Math.floor(p));
+  const rows = Math.max(1, Math.floor($("src").clientHeight / 18) - 1);
+  let out = "";
+  for (let i = Math.max(0, cur - rows + 1); i <= cur; i++) {
+    const line = i === cur ? SRC[i].slice(0, Math.ceil(SRC[i].length * (p - cur))) : SRC[i];
+    out += `<div class="${i === cur ? "cur" : ""}"><span class=ln>${i + 1}</span>${hl(line)}</div>`;
+  }
+  $("src").innerHTML = out;
+  $("bar").style.width = t / LOOP * 100 + "%";
+}
+
+// 4) main loop
+let last = performance.now(), frames = 0, fpsAt = last;
+function tick(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (!paused) { t += dt; if (t > LOOP) t = 0; }
+  draw(); code();
+  frames++;
+  if (now - fpsAt > 1000) { $("fps").textContent = frames; frames = 0; fpsAt = now; }
+  requestAnimationFrame(tick);
+}
+$("pause").onclick = () => { paused = !paused; $("pause").textContent = paused ? "재생" : "일시정지"; };
+$("mode").onclick = () => { mode = mode === "ascii" ? "text" : "ascii"; $("mode").textContent = "모드: " + mode; };
+requestAnimationFrame(tick);
+</script>
