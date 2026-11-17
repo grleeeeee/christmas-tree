@@ -390,13 +390,16 @@ function draw() {
     if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return;
     const k = r * COLS + c; G[k] = g; C[k] = col; GL[k] = glow;
   };
-  LIGHTS.forEach(l => {                   // bulbs sit in the tree's own grid
+  LIGHTS.forEach((l, i) => {              // bulbs sit in the tree's own grid
     if (t < l.at) return;
     lights++;
     const [c, r, d] = anchor(l.th, l.y);
     if (!onTop(c, r, d)) return;
-    for (let dr = 0; dr < 2; dr++) {      // unlit: plain colored bulb, no glow, no flicker
-      put(c - 1, r + dr, "(", l.c); put(c + 1, r + dr, ")", l.c); put(c, r + dr, "@", l.c);
+    const p = 0.35 + 0.3 * (1 + Math.sin(t * 1.5 + i * 1.7));   // never off: brightness breathes slowly
+    const core = `rgb(${[1, 3, 5].map(k => Math.round(parseInt(l.c.slice(k, k + 2), 16) * (1 - p) + 255 * p))})`;
+    for (let dr = 0; dr < 2; dr++) {
+      put(c - 1, r + dr, "(", l.c); put(c + 1, r + dr, ")", l.c);
+      put(c, r + dr, "@", core, true);
     }
   });
   ORN.map(o => [o, ...anchor(o.th, o.y)]).sort((a, b) => a[3] - b[3])
@@ -419,12 +422,9 @@ function draw() {
     const [c, r] = proj(0, STAR_Y, 0, 1, 0), turn = Math.cos(t * 0.8), wd = Math.max(0.25, Math.abs(turn)) * sk;
     STARS[turn < 0 ? 1 : 0].forEach(([dc, dr, g, col]) => put(c + dc * wd, r + dr * sk, g, col, g === "W" || g === "@"));
   }
-  if (sk > 0) {                           // halo + slow rays behind the star
+  if (sk > 0) {                           // slow rays behind the star
     const [sx, sy] = proj(0, STAR_Y, 0, 1, 0), px = sx * cs, py = sy * ch, R = 0.5 * SX * cs * sk;
     ctx.save(); ctx.globalCompositeOperation = "lighter";
-    const gr = ctx.createRadialGradient(px, py, 0, px, py, R);
-    gr.addColorStop(0, `rgba(255,214,90,${0.35 + 0.1 * Math.sin(t * 3)})`); gr.addColorStop(1, "rgba(255,214,90,0)");
-    ctx.fillStyle = gr; ctx.fillRect(px - R, py - R, 2 * R, 2 * R);
     ctx.translate(px, py); ctx.rotate(t * 0.3);
     for (let j = 0; j < 4; j++) {
       ctx.rotate(Math.PI / 4);
