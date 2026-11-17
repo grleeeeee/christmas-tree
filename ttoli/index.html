@@ -6,23 +6,21 @@
 *{box-sizing:border-box}
 body{margin:0;min-height:100svh;background:#0d0f14;color:#d9dde6;display:grid;place-items:center;
   font:15px/1.4 -apple-system,system-ui,"Apple SD Gothic Neo",sans-serif;padding:16px}
-.card{width:100%;max-width:560px;background:#11141c;border-radius:20px;overflow:hidden;box-shadow:0 10px 40px #0009}
-.stage{position:relative;aspect-ratio:1/1.25;background:linear-gradient(#0b0d14,#161a24 62%,#1d222e)}
+.card{width:100%;max-width:640px;background:#11141c;border-radius:20px;overflow:hidden;box-shadow:0 10px 40px #0009}
+.stage{position:relative;aspect-ratio:1/1.12;background:#07080c}
 canvas{width:100%;height:100%;display:block}
-.hud{position:absolute;left:18px;top:16px;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#7d8699;pointer-events:none}
-.hud b{display:block;font-size:20px;color:#fff;margin-bottom:6px}
-.hud i{color:#cfd6e6;font-style:normal;margin-left:6px}
+.hud{position:absolute;left:18px;top:14px;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#7d8699;pointer-events:none}
+.hud b{display:block;font-size:18px;color:#fff}
 #clock{position:absolute;right:18px;top:18px;font:12px ui-monospace,Menlo,monospace;color:#7d8699}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#ffb020;margin-right:6px}
 .bar{height:3px;background:#232836}.bar i{display:block;height:100%;width:0;background:#f0502d}
 .ctl{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:12px 16px;color:#7d8699;font-size:12px}
 .ctl button{font:inherit;font-size:15px;color:#d9dde6;background:#1a1f2c;border:1px solid #2c3345;border-radius:10px;padding:9px 14px}
-@media(min-width:900px){.card{max-width:640px}}
 </style>
 <main class=card>
   <section class=stage>
     <canvas id=cv></canvas>
-    <div class=hud><b>@ttoli 똘이</b>rotation<i id=hr></i><br>punches<i id=hp></i><br>letters<i id=hn></i></div>
+    <div class=hud><b>@ttoli 똘이</b><span id=hr></span></div>
     <div id=clock></div>
   </section>
   <div class=bar><i id=bar></i></div>
@@ -30,159 +28,67 @@ canvas{width:100%;height:100%;display:block}
 </main>
 <script>
 const $ = id => document.getElementById(id);
-const FPS = 40, DRAW = 10, LOOP = 30, TURNS = 2;          // 10s draw, 20s spin (2 turns)
-const PITCH = 12 * Math.PI / 180, cp = Math.cos(PITCH), sp = Math.sin(PITCH);
-const RAMP = ".,:;-=+*x%#&@W", RL = RAMP.length - 1, TAU = Math.PI * 2;
-const norm = v => { const l = Math.hypot(...v); return v.map(a => a / l); };
-const L = norm([-0.55, 0.5, 0.67]);
+const FPS = 40, DRAW = 10, LOOP = 30, TURNS = 2, START = -0.6;   // 10s draw at a diagonal, 20s spin
+const FRAMES = 6, FW = 200, FH = 170, FRAME_S = 0.12;           // sprite sheet cut from the punch GIF
+const RAMP = " .,:;-=+*x%#&@W", RL = RAMP.length - 1, TAU = Math.PI * 2;
 const hash = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5; return s - Math.floor(s); };
-const FUR = 0, DARK = 1, SHINE = 2, STAIN = 3, EYE = 4, RIM = 5;
-const PAL = [...RAMP].map((_, i) => `hsl(${30 + 12 * i / RL} ${22 - 14 * i / RL}% ${46 + 54 * i / RL}%)`);   // warm white curls
-const PAL_STAIN = [...RAMP].map((_, i) => `hsl(22 ${48 - 12 * i / RL}% ${38 + 40 * i / RL}%)`);              // tear-stained fur
-const PAL_EYE = [...RAMP].map((_, i) => `hsl(204 55% ${55 + 35 * i / RL}%)`);                                // cloudy blue-grey eyes
-const START = -0.62;                       // drawn at a diagonal, then spins
 let paused = false, t = +new URLSearchParams(location.search).get("t") || 0;
 
-// 1) 똘이: a slim white toy poodle standing up to punch, made of ellipsoids
-//    [group, kind, x, y, z, rx, ry, rz] — group 0 body, 1 left arm, 2 right arm (arms punch)
-const side = f => [-1, 1].flatMap(s => f(s, s < 0 ? 1 : 2));
-const PARTS = [
-  [0, FUR, 0, -0.27, 0, 0.185, 0.38, 0.175],                  // slim torso
-  [0, FUR, 0, -0.5, -0.02, 0.2, 0.17, 0.19],                  // hips
-  [0, FUR, 0, 0.02, 0.05, 0.205, 0.2, 0.19],                  // chest fluff
-  [0, FUR, 0, 0.23, 0.04, 0.14, 0.14, 0.14],                  // neck
-  [0, FUR, 0, 0.47, 0.03, 0.235, 0.22, 0.235],                // head
-  [0, FUR, 0, 0.63, 0.0, 0.2, 0.13, 0.2],                     // curly topknot
-  [0, FUR, 0, 0.4, 0.27, 0.105, 0.09, 0.13],                  // muzzle base
-  [0, STAIN, 0, 0.385, 0.385, 0.075, 0.068, 0.085],           // muzzle tip
-  [0, STAIN, 0, 0.33, 0.33, 0.07, 0.05, 0.09],                // chin beard
-  [0, DARK, 0, 0.415, 0.462, 0.06, 0.048, 0.042],              // big nose
-  [0, DARK, 0, 0.345, 0.43, 0.035, 0.012, 0.03],              // mouth
-  [0, FUR, 0, -0.5, -0.2, 0.035, 0.11, 0.035],                // tail
-  [0, FUR, 0, -0.37, -0.24, 0.075, 0.085, 0.075],             // tail pom
-  ...side((s, g) => [
-    [0, FUR, s * 0.14, 0.4, 0.16, 0.1, 0.1, 0.1],             // cheek fluff
-    [0, FUR, s * 0.25, 0.57, 0.0, 0.11, 0.1, 0.12],           // ear root
-    [0, FUR, s * 0.31, 0.43, 0.0, 0.115, 0.19, 0.125],        // fluffy ear
-    [0, FUR, s * 0.33, 0.3, 0.02, 0.09, 0.1, 0.1],            // ear tip curls
-    [0, STAIN, s * 0.09, 0.455, 0.235, 0.05, 0.05, 0.035],    // tear stain
-    [0, RIM, s * 0.108, 0.5, 0.225, 0.062, 0.058, 0.035],       // dark eye rim
-    [0, EYE, s * 0.108, 0.5, 0.243, 0.046, 0.044, 0.032],      // cloudy eye
-    [0, SHINE, s * 0.098, 0.514, 0.274, 0.013, 0.013, 0.008], // glint
-    [0, FUR, s * 0.13, -0.58, 0.02, 0.095, 0.17, 0.115],      // thigh
-    [0, FUR, s * 0.15, -0.76, 0.03, 0.05, 0.11, 0.055],       // thin lower leg
-    [0, FUR, s * 0.15, -0.86, 0.09, 0.06, 0.04, 0.1],         // hind foot
-    ...[-0.03, 0, 0.03].map(d => [0, DARK, s * 0.15 + d, -0.875, 0.185, 0.012, 0.012, 0.016]),   // nails
-    [g, FUR, s * 0.17, 0.06, 0.12, 0.075, 0.09, 0.1],         // shoulder
-    [g, FUR, s * 0.19, 0.0, 0.25, 0.05, 0.052, 0.14],         // thin forearm
-    [g, FUR, s * 0.2, 0.01, 0.4, 0.07, 0.066, 0.075],         // paw
-    [g, DARK, s * 0.2, -0.012, 0.468, 0.03, 0.024, 0.015],    // paw pad
-    ...[-0.035, 0, 0.035].map(d => [g, DARK, s * 0.2 + d, 0.035, 0.466, 0.013, 0.013, 0.012]),   // toe beans
-  ])];
-
-// 2) sample every part into a dense point cloud (finer than one cell)
-let N = 0, GRP, KIND, PX, PY, PZ, NX, NY, NZ, BORN, NOISE;
-function build(step) {
-  const a = [];
-  PARTS.forEach(([grp, kind, cx, cy, cz, rx, ry, rz], pi) => {
-    const furry = kind === FUR || kind === STAIN;
-    const n = Math.ceil(4 * Math.PI * ((rx + ry + rz) / 3) ** 2 / step ** 2 * 1.5);
-    for (let i = 0; i < n; i++) {         // fibonacci sphere
-      const y = 1 - 2 * (i + 0.5) / n, r = Math.sqrt(1 - y * y), th = i * 2.39996;
-      const d = [r * Math.cos(th), y, r * Math.sin(th)];
-      let p = [cx + d[0] * rx, cy + d[1] * ry, cz + d[2] * rz], nn = norm([d[0] / rx, d[1] / ry, d[2] / rz]);
-      if (furry) {                        // tight curls: bumpy surface + normals tilted per curl
-        const q = p.map(v => Math.floor(v * 38)), bump = 0.014 * Math.sin(p[0] * 95) * Math.sin(p[1] * 95 + pi) * Math.sin(p[2] * 95);
-        p = p.map((v, k) => v + nn[k] * bump);
-        nn = norm(nn.map((v, k) => v + 0.7 * (hash(q[0] + k * 17, q[1] * 3 + q[2] * 7) - 0.5)));
-      }
-      a.push([grp, kind, ...p, ...nn,
-        (0.78 - p[1]) / 1.68 * 8.4 + hash(Math.floor(th * 3), Math.floor(y * 9) + pi) * 1.1,
-        0.8 + 0.4 * hash(i, pi)]);
-    }
-  });
-  N = a.length;
-  [GRP, KIND] = [0, 1].map(f => Uint8Array.from(a, p => p[f]));
-  [PX, PY, PZ, NX, NY, NZ, BORN, NOISE] = Array.from({ length: 8 }, (_, f) => Float32Array.from(a, p => p[f + 2]));
-}
-
-// 3) canvas grid + camera
-const cv = $("cv"), ctx = cv.getContext("2d");
-let COLS, ROWS, cs, ch, fs, dpr, SX, SY, cx, cy, G, C, GL, Z, W;
-const bokeh = Array.from({ length: 9 }, (_, i) => [0.55 + hash(i, 1) * 0.45, 0.08 + hash(i, 2) * 0.3,
-  0.02 + hash(i, 3) * 0.03, ["255,170,80", "255,240,220", "120,170,255"][i % 3]]);
+const cv = $("cv"), ctx = cv.getContext("2d"), sheet = new Image();
+let COLS, cs, ch, fs, dpr, W, H, x0, y0, CELLS = [];
 function resize() {
   const r = cv.getBoundingClientRect();
   dpr = Math.min(devicePixelRatio || 1, 3);
   cv.width = r.width * dpr; cv.height = r.height * dpr;
-  COLS = Math.min(280, Math.max(130, Math.round(r.width / 2.1)));
+  COLS = Math.min(230, Math.max(110, Math.round(r.width / 2.5)));
   cs = cv.width / COLS; fs = cs / 0.6; ch = fs * 1.05;
-  ROWS = Math.floor(cv.height / ch);
-  const S = Math.min(cv.height * 0.8 / 1.8, cv.width * 0.84 / 1.1);   // px per world unit
-  SX = S / cs; SY = S / ch; cx = COLS / 2; cy = ROWS * 0.56;
-  G = new Array(COLS * ROWS); C = []; GL = [];
-  Z = new Float32Array(COLS * ROWS); W = new Int32Array(COLS * ROWS);
-  build(0.75 / SX);
+  W = Math.round(COLS * 0.94); H = Math.round(W * cs * FH / FW / ch);   // the card, in cells
+  x0 = cv.width / 2; y0 = (cv.height - H * ch) / 2 + 2 * ch;
+  if (!sheet.complete || !sheet.naturalWidth) return;
+  const oc = document.createElement("canvas"); oc.width = W; oc.height = H;
+  const g = oc.getContext("2d", { willReadFrequently: true });
+  CELLS = Array.from({ length: FRAMES }, (_, f) => {             // every frame -> glyph + color per cell
+    g.drawImage(sheet, f * FW, 0, FW, FH, 0, 0, W, H);
+    const px = g.getImageData(0, 0, W, H).data, out = new Array(W * H);
+    for (let i = 0; i < W * H; i++) {
+      const R = px[i * 4], G = px[i * 4 + 1], B = px[i * 4 + 2];
+      const lum = Math.min(1, Math.max(0, (0.3 * R + 0.59 * G + 0.11 * B) / 255 - 0.05) ** 0.85 * 1.3), q = Math.round(lum * RL);
+      const k = 1.25, m = 28;
+      out[i] = q ? [RAMP[q], `rgb(${Math.min(255, m + R * k) | 0},${Math.min(255, m + G * k) | 0},${Math.min(255, m + B * k) | 0})`] : null;
+    }
+    return out;
+  });
 }
-addEventListener("resize", resize); resize();
+addEventListener("resize", resize);
+sheet.onload = resize; sheet.src = "frames.jpg"; resize();
 
 function draw() {
   ctx.clearRect(0, 0, cv.width, cv.height);
-  for (const [x, y, r, c] of bokeh) {     // blurry night-street lights far behind
-    const R = r * cv.width, g = ctx.createRadialGradient(x * cv.width, y * cv.height, 0, x * cv.width, y * cv.height, R);
-    g.addColorStop(0, `rgba(${c},0.5)`); g.addColorStop(1, `rgba(${c},0)`);
-    ctx.fillStyle = g; ctx.fillRect(x * cv.width - R, y * cv.height - R, 2 * R, 2 * R);
-  }
-  ctx.fillStyle = "rgba(0,0,0,0.45)";     // floor shadow
-  ctx.beginPath(); ctx.ellipse(cx * cs, (cy + 0.86 * cp * SY) * ch, 0.5 * SX * cs, 0.09 * SX * cs, 0, 0, TAU); ctx.fill();
-
-  G.fill(undefined); Z.fill(-1e9); W.fill(-1);
-  const ang = START + (t < DRAW ? 0 : (t - DRAW) / (LOOP - DRAW) * TAU * TURNS), ca = Math.cos(ang), sa = Math.sin(ang);
-  const jab = [0, Math.max(0, Math.sin(t * 7)) ** 0.7, Math.max(0, -Math.sin(t * 7)) ** 0.7];  // alternate paws
-  const bob = 0.012 * Math.abs(Math.sin(t * 7));
-  let shown = 0;
-  for (let i = 0; i < N; i++) {           // z-buffer: keep the nearest point per cell
-    if (t < BORN[i]) continue;
-    const g = GRP[i], p = jab[g];
-    const lx = PX[i] - (g ? Math.sign(PX[i]) * p * 0.06 : 0), ly = PY[i] + bob + p * 0.07, lz = PZ[i] + p * 0.2;
-    const x = lx * ca - lz * sa, z = lz * ca + lx * sa;
-    const c = Math.round(cx + x * SX), r = Math.round(cy - (ly * cp - z * sp) * SY);
-    if (c < 0 || r < 0 || c >= COLS || r >= ROWS) continue;
-    const d = z * cp + ly * sp, k = r * COLS + c;
-    if (d > Z[k]) { Z[k] = d; W[k] = i; }
-  }
-  for (let k = 0; k < W.length; k++) {    // shade only what is visible
-    const i = W[k];
-    if (i < 0) continue;
-    shown++;
-    if (t - BORN[i] < 0.3) { G[k] = "*"; C[k] = "#fff"; GL[k] = true; continue; }   // fresh ink
-    const kind = KIND[i]; GL[k] = false;
-    if (kind === DARK) { G[k] = "@"; C[k] = "#5a4d55"; continue; }
-    if (kind === RIM) { G[k] = "#"; C[k] = "#7a5546"; continue; }
-    if (kind === SHINE) { G[k] = "*"; C[k] = "#fff"; continue; }
-    const nx = NX[i] * ca - NZ[i] * sa, nz1 = NZ[i] * ca + NX[i] * sa;
-    const ny = NY[i] * cp - nz1 * sp, nz = nz1 * cp + NY[i] * sp;
-    const b = Math.min(1, (0.42 + 0.66 * Math.max(0, L[0] * nx + L[1] * ny + L[2] * nz)) * NOISE[i]);
-    const q = Math.floor(b * RL);
-    G[k] = RAMP[q]; C[k] = (kind === STAIN ? PAL_STAIN : kind === EYE ? PAL_EYE : PAL)[q];
-  }
+  if (!CELLS.length) return;
+  const ang = START + (t < DRAW ? 0 : (t - DRAW) / (LOOP - DRAW) * TAU * TURNS);
+  const ca = Math.cos(ang), sa = Math.sin(ang), half = W / 2;
+  const frame = CELLS[Math.floor(t / FRAME_S) % FRAMES];         // the punch keeps playing
   ctx.font = `bold ${fs}px ui-monospace, Menlo, Consolas, monospace`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  for (let i = 0; i < G.length; i++) {
-    if (!G[i]) continue;
-    ctx.fillStyle = C[i];
-    ctx.shadowColor = C[i]; ctx.shadowBlur = GL[i] ? 6 * dpr : 0;
-    ctx.fillText(G[i], ((i % COLS) + 0.5) * cs, (Math.floor(i / COLS) + 0.5) * ch);
+  const wide = Math.abs(ca) * half;
+  for (let dc = -Math.floor(wide); dc <= wide; dc++) {           // card turning on its vertical axis
+    const u = dc / (half * ca), sc = Math.min(W - 1, Math.max(0, Math.round((u + 1) / 2 * (W - 1))));
+    const persp = 1 + 0.16 * u * sa;                             // far edge looks shorter
+    for (let r = 0; r < H; r++) {
+      const born = r / H * 8.6 + hash(sc, r) * 1.2;
+      if (t < born) continue;
+      const cell = frame[r * W + sc];
+      const x = x0 + dc * cs, y = y0 + ((r - H / 2) * persp + H / 2) * ch;
+      if (t - born < 0.25) { ctx.fillStyle = "#fff"; ctx.fillText("*", x, y); continue; }   // fresh ink
+      if (!cell) continue;
+      ctx.fillStyle = cell[1]; ctx.fillText(cell[0], x, y);
+    }
   }
-  ctx.shadowBlur = 0;
-  $("hr").textContent = ((((ang - START) * 180 / Math.PI) % 360 + 360) % 360).toFixed(1) + "°";
-  $("hp").textContent = Math.floor(t * 7 / Math.PI);
-  $("hn").textContent = shown.toLocaleString();
+  $("hr").textContent = `rotation ${((((ang - START) * 180 / Math.PI) % 360 + 360) % 360).toFixed(0)}° · punches ${Math.floor(t / (FRAME_S * FRAMES) * 2)}`;
   $("clock").innerHTML = `<i class=dot></i>${t < DRAW ? "drawing" : "spinning"} ${t.toFixed(1)}s`;
   $("bar").style.width = t / LOOP * 100 + "%";
 }
 
-// 4) main loop, capped at 40 fps
 let last = -1e9;
 function tick(now) {
   requestAnimationFrame(tick);
