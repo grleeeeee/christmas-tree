@@ -65,7 +65,10 @@ sheet.onload = resize; sheet.src = "frames.jpg"; resize();
 function draw() {
   ctx.clearRect(0, 0, cv.width, cv.height);
   if (!CELLS.length) return;
-  const ang = START + (t < DRAW ? 0 : (t - DRAW) / (LOOP - DRAW) * TAU * TURNS);
+  const SKIP = 25 * Math.PI / 180, SEG = Math.PI - 2 * SKIP;   // never shown edge-on: skip 90°±25°
+  const c = (START + Math.PI / 2 - SKIP) + (t < DRAW ? 0 : (t - DRAW) / (LOOP - DRAW) * 2 * SEG * TURNS);
+  const cc = ((c % (2 * SEG)) + 2 * SEG) % (2 * SEG);          // front half, then mirrored half
+  const ang = cc < SEG ? -Math.PI / 2 + SKIP + cc : Math.PI / 2 + SKIP + (cc - SEG);
   const ca = Math.cos(ang), sa = Math.sin(ang), half = W / 2;
   const frame = CELLS[Math.floor(t / FRAME_S) % FRAMES];         // the punch keeps playing
   ctx.font = `bold ${fs}px ui-monospace, Menlo, Consolas, monospace`;
@@ -84,7 +87,7 @@ function draw() {
       ctx.fillStyle = cell[1]; ctx.fillText(cell[0], x, y);
     }
   }
-  $("hr").textContent = `rotation ${((((ang - START) * 180 / Math.PI) % 360 + 360) % 360).toFixed(0)}° · punches ${Math.floor(t / (FRAME_S * FRAMES) * 2)}`;
+  $("hr").textContent = `${Math.cos(ang) < 0 ? "mirrored" : "front"} ${(((ang * 180 / Math.PI) % 360 + 360) % 360).toFixed(0)}° · punches ${Math.floor(t / (FRAME_S * FRAMES) * 2)}`;
   $("clock").innerHTML = `<i class=dot></i>${t < DRAW ? "drawing" : "spinning"} ${t.toFixed(1)}s`;
   $("bar").style.width = t / LOOP * 100 + "%";
 }
