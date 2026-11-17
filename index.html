@@ -128,7 +128,7 @@ function resize() {
   const r = cv.getBoundingClientRect();
   dpr = Math.min(devicePixelRatio || 1, 2);
   cv.width = r.width * dpr; cv.height = r.height * dpr;
-  COLS = Math.min(110, Math.max(60, Math.round(r.width / 4.6))));
+  COLS = Math.min(110, Math.max(60, Math.round(r.width / 4.6)));
   cs = cv.width / COLS; fs = cs * 1.6; ch = fs * 1.2;
   ROWS = Math.floor(cv.height / ch);
   G = new Array(COLS * ROWS); C = []; GL = [];
