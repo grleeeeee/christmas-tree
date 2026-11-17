@@ -149,29 +149,30 @@ function build(step) {
     Array.from({ length: 10 }, (_, f) => Float32Array.from(a, p => p[f + 2]));
 }
 
-// 3) poodle: ASCII art with fake-3D fur shading (height = distance to the edge)
-const DOG = [
-  "            @@@     ",
-  "           @@@@@    ",
-  "   @@     @@@@@@@   ",
-  "  @@@@    @@@o@@@@* ",
-  "   @@     @@@@@     ",
-  "    @@@@@@vv@@      ",
-  "   @@@@@@@@@@@      ",
-  "    @@@@@@@@@       ",
-  "     ||     ||      ",
-  "    @@@@   @@@@     "].map((row, r, art) => [...row].map((g, c) => {
-  const at = (rr, cc) => (art[rr] || "")[cc] > " ";
-  const dist = (rr, cc) => { let d = 0; while (d < 3 && [-1, 0, 1].every(a => [-1, 0, 1].every(b =>
-    at(rr + a * (d + 1), cc + b * (d + 1))))) d++; return at(rr, cc) ? Math.sqrt(d + 1) : 0; };
-  if (g === " ") return null;
-  if (g === "o" || g === "*") return ["@", "#11131f"];
-  if (g === "v") return ["#", "#ff4d6d"];
-  if (g === "|") return ["|", "#d9dbe6"];
-  const gx = dist(r, c + 1) - dist(r, c - 1), gy = dist(r - 1, c) - dist(r + 1, c);
-  const n = norm([-gx, -gy, 1.2]), b = Math.max(0, -0.55 * n[0] + 0.55 * n[1] + 0.63 * n[2]);
-  return ["@", `hsl(225 16% ${64 + 36 * b}%)`];   // same glyph, light does the 3D
-}));
+// 3) white poodle built from pom-poms (side view), later rasterised into ASCII
+function poodle(g) {
+  const S = 200, puff = (x, y, rx, ry, c0 = "#ffffff", c1 = "#bcc3da") => {
+    const X = x * S, Y = -y * S;
+    const gr = g.createRadialGradient(X - rx * S * 0.35, Y - ry * S * 0.4, 1, X, Y, Math.max(rx, ry) * S * 1.05);
+    gr.addColorStop(0, c0); gr.addColorStop(1, c1);
+    g.fillStyle = gr; g.beginPath(); g.ellipse(X, Y, rx * S, ry * S, 0, 0, TAU); g.fill();
+  };
+  g.translate(-10, 54);
+  [[0.125, 0.11], [-0.085, 0.11]].forEach(([x, y]) => {       // far legs, in shade
+    puff(x, y, 0.02, 0.075, "#cfd4e6", "#9aa2be"); puff(x, 0.035, 0.036, 0.032, "#cfd4e6", "#9aa2be"); });
+  puff(-0.2, 0.3, 0.02, 0.06); puff(-0.215, 0.375, 0.05, 0.05);  // tail + pom
+  puff(-0.13, 0.21, 0.08, 0.08); puff(0, 0.2, 0.15, 0.085); puff(0.1, 0.22, 0.1, 0.1);  // hip, body, chest
+  [[0.09, 0.11], [-0.12, 0.11]].forEach(([x, y]) => { puff(x, y, 0.022, 0.075); puff(x, 0.035, 0.04, 0.035); });
+  puff(0.16, 0.31, 0.05, 0.08);                                // neck
+  puff(0.16, 0.265, 0.06, 0.022, "#ff7a8f", "#c2203d");        // red collar
+  puff(0.2, 0.41, 0.07, 0.065); puff(0.19, 0.49, 0.06, 0.05);  // head + topknot
+  puff(0.29, 0.39, 0.055, 0.03);                               // muzzle
+  puff(0.165, 0.37, 0.03, 0.07, "#f2f4fb", "#a9b1cc");         // ear
+  puff(0.345, 0.395, 0.016, 0.016, "#3a3f58", "#0c0d16");      // nose
+  puff(0.25, 0.43, 0.013, 0.013, "#3a3f58", "#0c0d16");        // eye
+}
+let DOGC = [], DOGH = 0;
+
 // 4) ornaments + star: shapes rasterised into ASCII cells
 function climbShoe(g) {                   // side view, downturned toe on the left
   g.translate(-48, -28);
@@ -291,6 +292,7 @@ function resize() {
   Z = new Float32Array(COLS * ROWS); W = new Int32Array(COLS * ROWS);
   build(0.65 / SX); banner();
   ORN.forEach(o => o.cells = rasterize(o.draw, o.uw, o.uh, Math.round(o.uw * 0.22 * o.size * K)));
+  DOGC = rasterize(poodle, 132, 116, Math.round(31 * K)); DOGH = Math.max(...DOGC.map(c => c[1]));
   STARS = [1, -1].map(side => rasterize(starShape(side), 104, 104, Math.round(0.6 * SX)));
 }
 let CAP = [], CAP_Y = 0, BC = 0, bcs = 0, bch = 0;
@@ -405,6 +407,16 @@ function draw() {
       if (t < o.at || face < 0.35 || !onTop(c, r, d)) return;
       o.cells.forEach(([dc, dr, g, col]) => put(c + dc * face, r + dr, fresh ? "*" : g, fresh ? "#fff" : col, fresh));
     });
+  let dogPos = null;
+  if (t > DOG_AT) {                       // poodle on the floor, front-left, materialising top-down
+    const [fc, fr] = proj(-0.62, -1, 0.95, 1, 0), line = -DOGH + (t - DOG_AT) * 5 * DOGH;
+    dogPos = [fc, fr];
+    DOGC.forEach(([dc, dr]) => {          // clear a thin outline so the dog stands out from the tree
+      if (dr <= line) for (let x = -2; x <= 2; x++) for (let y = -1; y <= 1; y++) put(fc + dc + x, fr - DOGH + dr + y);
+    });
+    DOGC.forEach(([dc, dr, g, col]) => dr <= line &&
+      put(fc + dc, fr - DOGH + dr, line - dr < 1.5 ? "*" : g, line - dr < 1.5 ? "#fff" : col, line - dr < 1.5));
+  }
   if (sk > 0) {                           // star in the same grid; turning = squashing x
     const [c, r] = proj(0, STAR_Y, 0, 1, 0), turn = Math.cos(t * 0.8), wd = Math.max(0.25, Math.abs(turn)) * sk;
     STARS[turn < 0 ? 1 : 0].forEach(([dc, dr, g, col]) => put(c + dc * wd, r + dr * sk, g, col, g === "W" || g === "@"));
@@ -429,6 +441,10 @@ function draw() {
   gs.addColorStop(0, "rgba(0,0,12,0.6)"); gs.addColorStop(1, "rgba(0,0,12,0)");   // soft floor shadow
   ctx.save(); ctx.translate(gx * cs, gy * ch); ctx.scale(1, sp); ctx.fillStyle = gs;
   ctx.fillRect(-2 * SX * cs, -2 * SX * cs, 4 * SX * cs, 4 * SX * cs); ctx.restore();
+  if (dogPos) {                           // soft shadow under the dog
+    ctx.fillStyle = "rgba(0,0,10,0.5)"; ctx.beginPath();
+    ctx.ellipse(dogPos[0] * cs, (dogPos[1] + 1) * ch, 24 * K * cs, 2.2 * K * ch, 0, 0, TAU); ctx.fill();
+  }
   ctx.font = `bold ${fs}px ui-monospace, Menlo, Consolas, monospace`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   for (let i = 0; i < G.length; i++) {
@@ -448,22 +464,7 @@ function draw() {
       ctx.fillText(front < 3 ? "*" : "+*#@"[Math.min(3, Math.floor(cov * 4))], (c + 0.5) * bcs, CAP_Y + (r + 0.5) * bch);
     });
   }
-  if (t > DOG_AT) {                       // poodle on the floor, front-left, with a soft shadow
-    const [fc, fr] = proj(-0.62, -1, 0.95, 1, 0), rows = Math.min(DOG.length, Math.floor((t - DOG_AT) * 8) + 1);
-    const dw = cs * 1.55 * K, dh = ch * 1.55 * K;   // dog uses a bigger cell than the tree
-    const x0 = fc * cs - 10 * dw, y0 = (fr + 1) * ch - DOG.length * dh;
-    ctx.fillStyle = "rgba(0,0,10,0.45)";
-    ctx.beginPath(); ctx.ellipse(x0 + 9 * dw, y0 + DOG.length * dh, 10 * dw, 1.1 * dh, 0, 0, TAU); ctx.fill();
-    ctx.font = `bold ${fs * 1.55 * K}px ui-monospace, Menlo, Consolas, monospace`;
-    for (let r = 0; r < rows; r++) {
-      const a = DOG[r].findIndex(Boolean), b = DOG[r].findLastIndex(Boolean) + 1;
-      ctx.fillStyle = "#0e1433";            // hide the tree behind the dog
-      ctx.fillRect(x0 + a * dw, y0 + r * dh, (b - a) * dw, dh + 1);
-      DOG[r].forEach((cell, c) => cell && (ctx.fillStyle = cell[1],
-        ctx.fillText(cell[0], x0 + (c + 0.5) * dw, y0 + (r + 0.5) * dh)));
-    }
-  }
-  if (sk > 0) {                           // gold block star + orbiting sparkles
+  if (sk > 0) {                           // sparkles orbiting the star
     const [sx, sy] = proj(0, STAR_Y, 0, 1, 0), px = (sx + 0.5) * cs, py = (sy + 0.5) * ch;
     ctx.font = `bold ${fs * 1.2 * K}px ui-monospace, Menlo, Consolas, monospace`;
     for (let j = 0; j < 6; j++) {
