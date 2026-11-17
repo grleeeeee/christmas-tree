@@ -9,7 +9,7 @@ body{margin:0;min-height:100svh;background:var(--bg);color:var(--ink);display:gr
   font:15px/1.4 -apple-system,system-ui,"Apple SD Gothic Neo",sans-serif;padding:16px}
 .card{width:100%;max-width:520px;background:var(--panel);border-radius:20px;overflow:hidden;
   box-shadow:0 10px 40px #0008;display:grid}
-.stage{position:relative;aspect-ratio:1/1.4;background:radial-gradient(#171f4a,#0b0f2a)}
+.stage{position:relative;aspect-ratio:1/1.32;background:radial-gradient(#171f4a,#0b0f2a)}
 canvas{width:100%;height:100%;display:block}
 .hud{position:absolute;left:18px;top:16px;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;color:var(--sub);pointer-events:none}
 .hud b{display:block;font-size:20px;color:#fff;margin-bottom:6px}
@@ -31,7 +31,7 @@ pre .cur{background:#161c44;border-left-color:var(--ac)}
 .note{grid-column:1/-1;color:var(--sub);font-size:12px;padding:0 16px 14px;background:#0a0e26}
 @media(min-width:900px){
   .card{max-width:1100px;grid-template-columns:1.25fr 1fr;grid-template-rows:auto auto auto}
-  .stage{grid-row:1/4;aspect-ratio:auto;min-height:760px}
+  .stage{grid-row:1/4;aspect-ratio:auto;min-height:720px}
   pre{height:auto;min-height:440px}
   .code{display:flex;flex-direction:column}.code pre{flex:1}
 }
@@ -58,8 +58,8 @@ const $ = id => document.getElementById(id);
 const GREET = "MERRY CHRISTMAS 2026", LAST = "Merry Christmas! 주희";
 const FPS = 40, SPIN = 0.35;             // rad/s, clockwise seen from above
 const PITCH = 30 * Math.PI / 180, cp = Math.cos(PITCH), sp = Math.sin(PITCH);  // camera 30° up
-const GROW = 13, LIT = [13, 18], ORN_AT = 15, DOG_AT = 18;
-const STAR_AT = 19.5, GIFT_AT = 20, TEXT_AT = 23, BUILD = 25, LOOP = 35;
+const GROW = 10.4, LIT = [10.4, 14.4], ORN_AT = 12, DOG_AT = 14.4;
+const STAR_AT = 15.6, GIFT_AT = 16, TEXT_AT = 18.4, BUILD = 20, LOOP = 30;
 const RAMP = ".,:;-=+*x%#&@W", RL = RAMP.length - 1, TAU = Math.PI * 2, STAR_Y = 1.04;
 const COLORS = ["#ff5a5f", "#ffd23f", "#4cc9f0", "#c77dff", "#ff9f1c", "#80ed99"];
 const PAL = [...RAMP].map((_, i) => `hsl(${108 + i * 2.3} 72% ${20 + i * 58 / RL}%)`);
@@ -91,7 +91,7 @@ const GIFTS = [                           // [x, z, w, h, d, yaw, hue, stacked o
   [-0.2, 0.98, 0.24, 0.2, 0.22, 0.4, 50], [0.18, 1.0, 0.26, 0.22, 0.24, -0.3, 0],
   [0.18, 1.0, 0.16, 0.13, 0.15, 0.5, 120, 8], [0.5, 0.88, 0.2, 0.26, 0.2, 0.2, 290],
   [0.9, 0.5, 0.2, 0.17, 0.2, -0.6, 190], [-0.02, 1.16, 0.18, 0.14, 0.18, 0.9, 330]]
-  .map(([x, z, w, h, d, yaw, hue, on], i) => ({ x, z, w, h, d, yaw, hue, on, at: GIFT_AT + i * 0.3 }));
+  .map(([x, z, w, h, d, yaw, hue, on], i) => ({ x, z, w, h, d, yaw, hue, on, at: GIFT_AT + i * 0.24 }));
 GIFTS.forEach(g => g.rest = g.on == null ? -1 : -1 + GIFTS[g.on].h);
 
 // 2) everything becomes a dense point cloud, sampled finer than one cell
@@ -286,7 +286,7 @@ function resize() {
   K = 1.45; COLS = Math.round(BASE * K);   // tree grid is K times finer than the sprites
   cs = cv.width / COLS; fs = cs / 0.6; ch = fs * 1.05;
   ROWS = Math.floor(cv.height / ch);
-  const S = Math.min(cv.height * 0.7 / 2.45, cv.width * 0.46);  // px per world unit
+  const S = Math.min(cv.height * 0.742 / 2.45, cv.width * 0.46);  // px per world unit
   SX = S / cs; SY = S / ch; cx = COLS / 2; cy = ROWS * 0.03 + 1.12 * SY;
   G = new Array(COLS * ROWS); C = []; GL = [];
   Z = new Float32Array(COLS * ROWS); W = new Int32Array(COLS * ROWS);
@@ -306,7 +306,7 @@ function banner() {                       // greeting rasterised on a finer ASCI
   const font = px => `900 ${px}px -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif`;
   let fpx = h * 0.6; g.font = font(fpx);
   fpx *= Math.min(1, w * 0.9 / g.measureText(LAST).width); g.font = font(fpx);
-  g.fillText(LAST, w / 2, h * 0.45);
+  g.fillText(LAST, w / 2, h * 0.36);
   const px = g.getImageData(0, 0, w, h).data;
   CAP = [];
   for (let r = 0; r < rows; r++) for (let c = 0; c < BC; c++) {
@@ -390,16 +390,13 @@ function draw() {
     if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return;
     const k = r * COLS + c; G[k] = g; C[k] = col; GL[k] = glow;
   };
-  LIGHTS.forEach((l, i) => {              // bulbs: a lit core with a colored rim, in the tree's grid
+  LIGHTS.forEach(l => {                   // bulbs sit in the tree's own grid
     if (t < l.at) return;
     lights++;
     const [c, r, d] = anchor(l.th, l.y);
     if (!onTop(c, r, d)) return;
-    const p = 0.35 + 0.3 * (1 + Math.sin(t * 1.5 + i * 1.7));   // never off: brightness breathes slowly
-    const core = `rgb(${[1, 3, 5].map(k => Math.round(parseInt(l.c.slice(k, k + 2), 16) * (1 - p) + 255 * p))})`;
-    for (let dr = 0; dr < 2; dr++) {
-      put(c - 1, r + dr, "(", l.c); put(c + 1, r + dr, ")", l.c);
-      put(c, r + dr, "@", core, true);
+    for (let dr = 0; dr < 2; dr++) {      // unlit: plain colored bulb, no glow, no flicker
+      put(c - 1, r + dr, "(", l.c); put(c + 1, r + dr, ")", l.c); put(c, r + dr, "@", l.c);
     }
   });
   ORN.map(o => [o, ...anchor(o.th, o.y)]).sort((a, b) => a[3] - b[3])
@@ -458,7 +455,7 @@ function draw() {
   if (t > TEXT_AT) {                      // ASCII greeting sweeps in, left to right
     ctx.font = `bold ${fs * bcs / cs}px ui-monospace, Menlo, Consolas, monospace`;
     CAP.forEach(([c, r, cov]) => {
-      const front = (t - TEXT_AT) / 1.8 * BC - c;
+      const front = (t - TEXT_AT) / 1.5 * BC - c;
       if (front < 0) return;
       const sh = 0.6 + 0.4 * Math.sin(c * 0.18 - t * 3 + r * 0.3);
       ctx.fillStyle = front < 3 ? "#fffbe0" : `hsl(${46 + 6 * sh} 100% ${50 + 35 * cov * sh}%)`;
